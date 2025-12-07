@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DATABASE_URL = "postgresql://myuser:Admin@localhost:5432/auth_db" 
+DATABASE_URL = "postgresql://myuser:Admin@localhost:5432/auth_db"  
 
 engine = create_engine(
     DATABASE_URL,

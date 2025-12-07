@@ -5,7 +5,8 @@ from users import router as UsersRouter
 
 app = FastAPI()
 
-Base.metadata.create_all(bind=engine)
+
+ 
 
 app.include_router(AuthRouter)
 app.include_router(UsersRouter)
