@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, inspect
 from datetime import datetime, timedelta
 from typing import List
-from db import get_db # Import the models
+from db import get_db 
 from models import User, Challenge, Game
 from challenge_schema import CreateChallengeSchema, AvailableChallenge, MyChallenge, UserMini, ChallengeList
 from middleware import get_current_user_id, get_current_user 
@@ -155,9 +155,9 @@ async def accept_challenge(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    # Use a transaction for safe multi-step updates
+   
     try:
-        # 1. Check challenge existence and status
+        # check challenge existence and status
         challenge = db.query(Challenge).filter(Challenge.id == challenge_id).with_for_update().first()
         
         if not challenge:
@@ -179,7 +179,7 @@ async def accept_challenge(
                 detail={"success": False, "error": {"code": "INVALID_ACTION", "message": "Cannot accept your own challenge"}}
             )
 
-        # 2. Check acceptor balance
+        # check acceptor balance
         acceptor = db.query(User).filter(User.id == user_id).with_for_update().first()
         
         if not acceptor or acceptor.balance < challenge.stake:
@@ -190,7 +190,7 @@ async def accept_challenge(
             
        
 
-        # 3. Create game
+        # create game
         new_game = Game(
             challenge_id=challenge_id,
             white_id=challenge.creator_id,
@@ -199,7 +199,7 @@ async def accept_challenge(
         )
         db.add(new_game)
 
-        # 4. Update challenge
+        # update challenge
         challenge.status = "ACCEPTED"
         challenge.acceptor_id = user_id
         
