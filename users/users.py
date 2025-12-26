@@ -21,12 +21,10 @@ def get_current_user(token: str = Depends(security)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-#get profile
+#getprofile
 @router.get("/profile")
 def get_profile(user_id: int = Depends(get_current_user), db: Session = Depends(get_db)):
-
     user = db.query(User).filter(User.id == user_id).first()
-
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -35,16 +33,13 @@ def get_profile(user_id: int = Depends(get_current_user), db: Session = Depends(
         "data": {
             "id": user.id,
             "email": user.email,
-            "username": user.username,
             "displayName": user.displayName,
-            "avatarUrl": user.avatarUrl,
-            "balance": user.balance,
-            "gamesPlayed": user.gamesPlayed,
-            "gamesWon": user.gamesWon,
-            "currentRating": user.currentRating,
-            "createdAt": user.createdAt,
+            "balance": float(user.balance),
+            "rating": user.currentRating
         },
     }
+
+
 
 
 #updateprofile

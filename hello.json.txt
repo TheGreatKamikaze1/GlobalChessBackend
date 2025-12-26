@@ -1,0 +1,643 @@
+# Chess Gaming Platform - API Documentation
+
+## Base URL
+All API endpoints are accessed via: `/functions/v1/{endpoint}`
+
+---
+
+## Authentication
+All protected endpoints require a Bearer token in the Authorization header:
+```
+Authorization: Bearer {token}
+```
+
+---
+
+## API Endpoints
+
+### 1. User Management
+
+#### GET `/api/users/profile`
+Get current user profile
+
+**Request:**
+```json
+Headers: {
+  "Authorization": "Bearer {token}"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "username": "player123",
+    "displayName": "Player 123",
+    "avatarUrl": "https://...",
+    "balance": 1500.00,
+    "gamesPlayed": 45,
+    "gamesWon": 28,
+    "currentRating": 1450,
+    "createdAt": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+#### PUT `/api/users/profile`
+Update user profile
+
+**Request:**
+```json
+{
+  "displayName": "New Name",
+  "avatarUrl": "https://..."
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "displayName": "New Name",
+    "avatarUrl": "https://...",
+    "updatedAt": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+#### GET `/api/users/balance`
+Get user balance
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "balance": 1500.00,
+    "currency": "USD"
+  }
+}
+```
+
+---
+
+### 2. Challenge Management
+
+#### POST `/api/challenges/create`
+Create a new challenge
+
+**Request:**
+```json
+{
+  "stake": 100.00
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "creatorId": "uuid",
+    "stake": 100.00,
+    "timeControl": 900,
+    "status": "OPEN",
+    "createdAt": "2024-01-01T00:00:00Z",
+    "expiresAt": "2024-01-01T01:00:00Z"
+  }
+}
+```
+
+#### GET `/api/challenges/available`
+Get all available challenges
+
+**Request:**
+```json
+Query Params: {
+  "limit": 10,
+  "offset": 0
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "creator": {
+        "id": "uuid",
+        "username": "player123",
+        "displayName": "Player 123"
+      },
+      "stake": 100.00,
+      "timeControl": 900,
+      "status": "OPEN",
+      "createdAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "pagination": {
+    "total": 25,
+    "limit": 10,
+    "offset": 0
+  }
+}
+```
+
+#### GET `/api/challenges/my-challenges`
+Get user's created challenges
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "stake": 100.00,
+      "status": "OPEN",
+      "createdAt": "2024-01-01T00:00:00Z",
+      "acceptor": null
+    }
+  ]
+}
+```
+
+#### POST `/api/challenges/:id/accept`
+Accept a challenge
+
+**Request:**
+```json
+{
+  "challengeId": "uuid"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "challengeId": "uuid",
+    "gameId": "uuid",
+    "status": "ACCEPTED",
+    "message": "Challenge accepted. Game started!"
+  }
+}
+```
+
+#### DELETE `/api/challenges/:id/cancel`
+Cancel own challenge
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Challenge cancelled successfully"
+}
+```
+
+---
+
+### 3. Game Management
+
+#### GET `/api/games/:id`
+Get game details
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "white": {
+      "id": "uuid",
+      "username": "player1",
+      "displayName": "Player 1"
+    },
+    "black": {
+      "id": "uuid",
+      "username": "player2",
+      "displayName": "Player 2"
+    },
+    "stake": 100.00,
+    "status": "ONGOING",
+    "moves": ["e4", "e5", "Nf3"],
+    "currentFen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+    "startedAt": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+#### POST `/api/games/:id/move`
+Make a move in the game
+
+**Request:**
+```json
+{
+  "move": {
+    "from": "e2",
+    "to": "e4"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "gameId": "uuid",
+    "move": "e4",
+    "currentFen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+    "isCheck": false,
+    "isCheckmate": false,
+    "isGameOver": false
+  }
+}
+```
+
+#### POST `/api/games/:id/resign`
+Resign from the game
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "gameId": "uuid",
+    "result": "BLACK_WIN",
+    "winnerId": "uuid",
+    "message": "You have resigned. Game over."
+  }
+}
+```
+
+#### GET `/api/games/history`
+Get user's game history
+
+**Request:**
+```json
+Query Params: {
+  "limit": 10,
+  "offset": 0
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "opponent": {
+        "id": "uuid",
+        "username": "player2",
+        "displayName": "Player 2"
+      },
+      "stake": 100.00,
+      "result": "WHITE_WIN",
+      "moves": 42,
+      "completedAt": "2024-01-01T00:30:00Z"
+    }
+  ],
+  "pagination": {
+    "total": 45,
+    "limit": 10,
+    "offset": 0
+  }
+}
+```
+
+#### GET `/api/games/active`
+Get user's active games
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "opponent": {
+        "id": "uuid",
+        "username": "player2",
+        "displayName": "Player 2"
+      },
+      "stake": 100.00,
+      "status": "ONGOING",
+      "startedAt": "2024-01-01T00:00:00Z",
+      "currentTurn": "white"
+    }
+  ]
+}
+```
+
+---
+
+### 4. Transaction Management
+
+#### POST `/api/transactions/deposit`
+Add funds to account
+
+**Request:**
+```json
+{
+  "amount": 500.00,
+  "paymentMethod": "card",
+  "reference": "payment_ref_123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "transactionId": "uuid",
+    "amount": 500.00,
+    "newBalance": 2000.00,
+    "status": "COMPLETED",
+    "createdAt": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+#### POST `/api/transactions/withdraw`
+Withdraw funds
+
+**Request:**
+```json
+{
+  "amount": 200.00,
+  "accountDetails": {
+    "bankName": "Example Bank",
+    "accountNumber": "1234567890"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "transactionId": "uuid",
+    "amount": 200.00,
+    "newBalance": 1300.00,
+    "status": "PENDING",
+    "createdAt": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+#### GET `/api/transactions/history`
+Get transaction history
+
+**Request:**
+```json
+Query Params: {
+  "limit": 20,
+  "offset": 0,
+  "type": "ALL" // ALL, DEPOSIT, WITHDRAWAL, WIN, LOSS
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "amount": 100.00,
+      "type": "WIN",
+      "reference": "game_uuid",
+      "status": "COMPLETED",
+      "createdAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "pagination": {
+    "total": 150,
+    "limit": 20,
+    "offset": 0
+  }
+}
+```
+
+---
+
+### 5. Statistics
+
+#### GET `/api/stats/dashboard`
+Get dashboard statistics
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "totalGames": 45,
+    "wins": 28,
+    "losses": 15,
+    "draws": 2,
+    "winRate": 62.2,
+    "currentBalance": 1500.00,
+    "totalEarnings": 3500.00,
+    "currentRating": 1450,
+    "recentGames": [
+      {
+        "id": "uuid",
+        "opponent": "player2",
+        "result": "WIN",
+        "stake": 100.00,
+        "completedAt": "2024-01-01T00:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Error Responses
+
+All error responses follow this format:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human readable error message",
+    "details": {}
+  }
+}
+```
+
+### Common Error Codes:
+- `UNAUTHORIZED` - Invalid or missing authentication token
+- `INSUFFICIENT_BALANCE` - Not enough funds for the operation
+- `CHALLENGE_NOT_FOUND` - Challenge does not exist
+- `GAME_NOT_FOUND` - Game does not exist
+- `INVALID_MOVE` - Chess move is not legal
+- `GAME_ALREADY_ENDED` - Cannot perform action on completed game
+- `CHALLENGE_EXPIRED` - Challenge has expired
+- `VALIDATION_ERROR` - Request validation failed
+
+---
+
+## WebSocket Events (Socket.io)
+
+### Connection
+
+Connect to Socket.io server:
+
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io(process.env.VITE_SOCKET_URL || 'http://localhost:3000', {
+  query: { 
+    gameId: 'game123',
+    userName: 'Player1',
+    color: '#FF6B6B'
+  }
+});
+```
+
+### Game Events
+
+#### Join Game
+```javascript
+socket.emit('join-game', {
+  gameId: 'game123',
+  userName: 'Player1',
+  color: '#FF6B6B'
+});
+```
+
+#### Make Move
+```javascript
+socket.emit('make-move', {
+  gameId: 'game123',
+  move: {
+    from: 'e2',
+    to: 'e4',
+    piece: 'p'
+  },
+  userName: 'Player1'
+});
+
+// Listen for moves
+socket.on('game-move', (moveData) => {
+  console.log('Opponent move:', moveData);
+});
+```
+
+#### Update Cursor Position
+```javascript
+socket.emit('update-cursor', {
+  gameId: 'game123',
+  position: {
+    x: 100,
+    y: 200,
+    userName: 'Player1',
+    color: '#FF6B6B'
+  }
+});
+
+// Listen for cursor updates
+socket.on('cursor-update', (data) => {
+  console.log('Player cursor:', data);
+});
+```
+
+#### Leave Game
+```javascript
+socket.emit('leave-game', { gameId: 'game123' });
+
+// Listen for players leaving
+socket.on('player-left', (userId) => {
+  console.log('Player left:', userId);
+});
+```
+
+### Server-Side Socket.io Implementation
+
+Create a Socket.io server (Node.js/Express example):
+
+```javascript
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
+
+  socket.on('join-game', ({ gameId, userName, color }) => {
+    socket.join(gameId);
+    socket.to(gameId).emit('player-joined', {
+      userId: socket.id,
+      userName,
+      color
+    });
+  });
+
+  socket.on('make-move', ({ gameId, move, userName }) => {
+    socket.to(gameId).emit('game-move', {
+      move,
+      userName,
+      userId: socket.id
+    });
+  });
+
+  socket.on('update-cursor', ({ gameId, position }) => {
+    socket.to(gameId).emit('cursor-update', {
+      userId: socket.id,
+      position
+    });
+  });
+
+  socket.on('leave-game', ({ gameId }) => {
+    socket.to(gameId).emit('player-left', socket.id);
+    socket.leave(gameId);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
+});
+
+server.listen(3000, () => {
+  console.log('Socket.io server running on port 3000');
+});
+```
+
+---
+
+## Rate Limits
+- 100 requests per minute per user
+- 10 concurrent WebSocket connections per user
+
+## Notes
+- All timestamps are in ISO 8601 format (UTC)
+- All monetary amounts are in USD with 2 decimal places
+- Time control is fixed at 15 minutes (900 seconds)
+- Challenges expire after 1 hour if not accepted

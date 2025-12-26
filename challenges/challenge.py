@@ -255,3 +255,48 @@ async def cancel_challenge(
     except Exception as e:
         db.rollback()
         raise e
+    
+    
+    
+    @router.post("/{challenge_id}/accept")
+async def accept_challenge(
+    challenge_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    try:
+        # Lock both the challenge and the acceptor to prevent race conditions
+        challenge = db.query(Challenge).filter(Challenge.id == challenge_id).with_for_update().first()
+        acceptor = db.query(User).filter(User.id == user_id).with_for_update().first()
+
+        if not challenge or challenge.status != "OPEN":
+            raise HTTPException(status_code=404, detail="Challenge unavailable")
+        
+        if acceptor.balance < challenge.stake:
+            raise HTTPException(status_code=400, detail="Insufficient balance")
+
+        # Deduct stake from both players immediately to "escrow" it
+        creator = db.query(User).filter(User.id == challenge.creator_id).with_for_update().first()
+        creator.balance -= challenge.stake
+        acceptor.balance -= challenge.stake
+
+        # Create the game
+        new_game = Game(
+            challenge_id=challenge_id,
+            white_id=challenge.creator_id,
+            black_id=user_id,
+            stake=challenge.stake,
+            status="ONGOING",
+            current_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        )
+        
+        challenge.status = "ACCEPTED"
+        challenge.acceptor_id = user_id
+        
+        db.add(new_game)
+        db.commit()
+        
+        return {"success": True, "gameId": new_game.id}
+    except Exception as e:
+        db.rollback()
+        raise e
