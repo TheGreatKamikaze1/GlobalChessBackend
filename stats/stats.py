@@ -1,8 +1,7 @@
-
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from core.models import Game
-from users.models import User
+from core.models import User
 import json
 
 def get_dashboard_stats(db: Session, user_id: int):

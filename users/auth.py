@@ -6,8 +6,7 @@ import os
 from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-
-from db import get_db, User 
+from core.database import get_db, User 
 from auth_schema import RegisterSchema, LoginSchema  
 
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")

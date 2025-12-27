@@ -1,30 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from datetime import datetime
 import json
+from datetime import datetime
 
-from db import get_db
-from models import Game, User
-from dependencies import get_current_user_id
-from core.exceptions import AppException
-
-def make_move(db, game_id, move, user_id):
-    game = get_game(db, game_id)
-
-    if not game:
-        raise AppException(
-            code="GAME_NOT_FOUND",
-            message="Game does not exist"
-        )
-
-    if game.status == "ENDED":
-        raise AppException(
-            code="GAME_ALREADY_ENDED",
-            message="Cannot perform action on completed game"
-        )
-
-from game_schema import (
+from core.database import get_db
+from core.models import Game, User
+from game_management.dependencies import get_current_user_id
+from game_management.logic import process_move
+from game_management.game_schema import (
     GameResponse,
     MoveRequest,
     MoveResponse,
@@ -37,8 +21,10 @@ from game_schema import (
     ActiveGameItem,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["Games"])
 
+
+# Helpers
 
 def get_game_or_404(db: Session, game_id: int) -> Game:
     game = db.query(Game).filter(Game.id == game_id).first()
@@ -51,10 +37,10 @@ def get_game_or_404(db: Session, game_id: int) -> Game:
 
 
 def check_participant(game: Game, user_id: int):
-    if game.white_id != user_id and game.black_id != user_id:
+    if user_id not in (game.white_id, game.black_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={"success": False, "error": {"code": "FORBIDDEN", "message": "You are not a participant"}},
+            detail={"success": False, "error": {"code": "FORBIDDEN", "message": "Not a participant"}},
         )
 
 
@@ -62,33 +48,24 @@ def get_current_turn(moves: list[str]) -> str:
     return "white" if len(moves) % 2 == 0 else "black"
 
 
+# Routes
 
 @router.get("/{game_id}", response_model=GameResponse)
 def get_game(game_id: int, db: Session = Depends(get_db)):
-    game = db.query(Game).filter(Game.id == game_id).first()
-
-    if not game:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"success": False, "error": {"code": "GAME_NOT_FOUND", "message": "Game not found"}},
-        )
-
-   
-    white_player = PlayerDetails(
-        id=game.white.id,
-        username=game.white.username,
-        displayName=game.white.display_name,
-    )
-    black_player = PlayerDetails(
-        id=game.black.id,
-        username=game.black.username,
-        displayName=game.black.display_name,
-    )
+    game = get_game_or_404(db, game_id)
 
     return {
         "id": game.id,
-        "white": white_player,
-        "black": black_player,
+        "white": PlayerDetails(
+            id=game.white.id,
+            username=game.white.username,
+            displayName=game.white.display_name,
+        ),
+        "black": PlayerDetails(
+            id=game.black.id,
+            username=game.black.username,
+            displayName=game.black.display_name,
+        ),
         "stake": game.stake,
         "status": game.status,
         "moves": json.loads(game.moves),
@@ -106,33 +83,25 @@ def make_move(
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
 ):
-    game = get_game_or_404(db, game_id)
-    check_participant(game, user_id)
+    result = process_move(db, game_id, user_id, req.move)
 
-    if game.status != "ONGOING":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"success": False, "error": {"code": "GAME_ALREADY_ENDED", "message": "Game already ended"}},
-        )
-
-    moves_list = json.loads(game.moves)
-
-   
-    move_str = req.move
-    moves_list.append(move_str)
-
-    db.query(Game).filter(Game.id == game_id).update({
-        "moves": json.dumps(moves_list)
-    })
-    db.commit()
+    if "error" in result:
+        error_map = {
+            "GAME_NOT_ACTIVE": (400, "Game not active"),
+            "NOT_YOUR_TURN": (403, "Not your turn"),
+            "ILLEGAL_MOVE": (400, "Illegal move"),
+            "INVALID_FORMAT": (400, "Invalid move format"),
+        }
+        status_code, msg = error_map.get(result["error"], (400, "Move failed"))
+        raise HTTPException(status_code=status_code, detail=msg)
 
     return {
         "gameId": game_id,
-        "move": move_str,
-        "currentFen": game.current_fen, 
-        "isCheck": False,
-        "isCheckmate": False,
-        "isGameOver": False,
+        "move": req.move,
+        "currentFen": result["fen"],
+        "isCheck": result.get("isCheck", False),
+        "isCheckmate": result.get("isCheckmate", False),
+        "isGameOver": result["gameOver"],
     }
 
 
@@ -146,48 +115,28 @@ def resign_game(
     check_participant(game, user_id)
 
     if game.status != "ONGOING":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"success": False, "error": {"code": "GAME_ALREADY_ENDED", "message": "Game already ended"}},
-        )
+        raise HTTPException(status_code=400, detail="Game already ended")
 
-    # winner based on who resigned
-    winner_id = game.black_id if game.white_id == user_id else game.white_id
-    result = "BLACK_WIN" if game.white_id == user_id else "WHITE_WIN"
+    winner_id = game.black_id if user_id == game.white_id else game.white_id
+    result = "BLACK_WIN" if user_id == game.white_id else "WHITE_WIN"
 
-    try:
-        
-        db.query(Game).filter(Game.id == game_id).update({
-            "status": "COMPLETED",
-            "result": result,
-            "winner_id": winner_id,
-            "completed_at": datetime.utcnow(),
-        })
+    game.status = "COMPLETED"
+    game.result = result
+    game.winner_id = winner_id
+    game.completed_at = datetime.utcnow()
 
-        # update balances
-        db.query(User).filter(User.id == winner_id).update({
-            User.balance: User.balance + game.stake
-        })
-        db.query(User).filter(User.id == user_id).update({
-            User.balance: User.balance - game.stake
-        })
+    db.query(User).filter(User.id == winner_id).update({
+        User.balance: User.balance + (game.stake * 2)
+    })
 
-        db.commit()
-
-    except Exception:
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Transaction failed on resign"
-        )
+    db.commit()
 
     return {
         "gameId": game_id,
         "result": result,
         "winnerId": winner_id,
-        "message": "You have resigned. Game over.",
+        "message": "You resigned. Game over.",
     }
-
 
 
 @router.get("/history", response_model=PaginatedHistory)
@@ -196,45 +145,31 @@ def get_game_history(
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
 ):
-    limit = params.limit
-    offset = params.offset
-
     base_filter = [
         or_(Game.white_id == user_id, Game.black_id == user_id),
         Game.status == "COMPLETED",
     ]
 
     total = db.query(Game).filter(*base_filter).count()
-    games = db.query(Game).filter(*base_filter)\
-        .offset(offset).limit(limit).all()
+    games = db.query(Game).filter(*base_filter).offset(params.offset).limit(params.limit).all()
 
-    data_list = []
-
+    data = []
     for game in games:
-        # determine opponent
         opponent = game.black if game.white_id == user_id else game.white
-
-        opponent_details = PlayerDetails(
-            id=opponent.id,
-            username=opponent.username,
-            displayName=opponent.display_name,
-        )
-
-        data_list.append(GameHistoryItem(
+        data.append(GameHistoryItem(
             id=game.id,
-            opponent=opponent_details,
+            opponent=PlayerDetails(
+                id=opponent.id,
+                username=opponent.username,
+                displayName=opponent.display_name,
+            ),
             stake=game.stake,
             result=game.result,
             moveCount=len(json.loads(game.moves)),
             completedAt=game.completed_at,
         ))
 
-    return {
-        "success": True,
-        "data": data_list,
-        "pagination": {"total": total, "limit": limit, "offset": offset},
-    }
-
+    return {"success": True, "data": data, "pagination": {"total": total, **params.dict()}}
 
 
 @router.get("/active", response_model=ActiveGamesResponse)
@@ -247,101 +182,20 @@ def get_active_games(
         Game.status == "ONGOING",
     ).all()
 
-    data_list = []
-
+    data = []
     for game in games:
         opponent = game.black if game.white_id == user_id else game.white
-
-        opponent_details = PlayerDetails(
-            id=opponent.id,
-            username=opponent.username,
-            displayName=opponent.display_name,
-        )
-
-        current_turn = get_current_turn(json.loads(game.moves))
-
-        data_list.append(ActiveGameItem(
+        data.append(ActiveGameItem(
             id=game.id,
-            opponent=opponent_details,
+            opponent=PlayerDetails(
+                id=opponent.id,
+                username=opponent.username,
+                displayName=opponent.display_name,
+            ),
             stake=game.stake,
             status=game.status,
             startedAt=game.started_at,
-            currentTurn=current_turn,
+            currentTurn=get_current_turn(json.loads(game.moves)),
         ))
 
-    return {"success": True, "data": data_list}
-
-
-
-
-
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-import json
-import chess  # New: Core chess logic library
-from datetime import datetime
-
-from db import get_db
-from models import Game, User
-from dependencies import get_current_user_id
-from game_schema import MoveRequest, MoveResponse, GameResponse, PlayerDetails
-
-router = APIRouter()
-
-@router.post("/{game_id}/move", response_model=MoveResponse)
-def make_move(
-    game_id: int,
-    req: MoveRequest,
-    db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id),
-):
-    # 1. Fetch game with a Row-Level Lock (prevents race conditions)
-    game = db.query(Game).filter(Game.id == game_id).with_for_update().first()
-    if not game or game.status != "ONGOING":
-        raise HTTPException(status_code=400, detail="Game not active")
-
-    # 2. Validate Turn
-    board = chess.Board(game.current_fen)
-    is_white_turn = board.turn == chess.WHITE
-    current_player_id = game.white_id if is_white_turn else game.black_id
-
-    if user_id != current_player_id:
-        raise HTTPException(status_code=403, detail="It is not your turn")
-
-    # 3. Validate Chess Move
-    try:
-        move = chess.Move.from_uci(req.move)
-        if move not in board.legal_moves:
-            raise ValueError("Illegal move")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid or illegal move")
-
-    # 4. Update Board State
-    board.push(move)
-    moves_list = json.loads(game.moves)
-    moves_list.append(req.move)
-
-    # 5. Check for Game Over (Checkmate/Draw)
-    game_over = board.is_game_over()
-    if game_over:
-        game.status = "COMPLETED"
-        game.completed_at = datetime.utcnow()
-        if board.is_checkmate():
-            game.result = "WHITE_WIN" if is_white_turn else "BLACK_WIN"
-            game.winner_id = user_id
-        else:
-            game.result = "DRAW"
-
-    game.current_fen = board.fen()
-    game.moves = json.dumps(moves_list)
-    
-    db.commit()
-
-    return {
-        "gameId": game.id,
-        "move": req.move,
-        "currentFen": game.current_fen,
-        "isCheck": board.is_check(),
-        "isCheckmate": board.is_checkmate(),
-        "isGameOver": game_over
-    }
+    return {"success": True, "data": data}

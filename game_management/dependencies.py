@@ -5,8 +5,8 @@ from pydantic import BaseModel
 import jwt
 import os
 
-from db import get_db
-from models import User
+from core.database import get_db
+from core.models import User
 from fastapi.security import OAuth2PasswordBearer
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 

@@ -2,6 +2,7 @@ import chess
 import json
 from sqlalchemy.orm import Session
 from core.models import Game, User
+from datetime import datetime
 
 def process_move(db: Session, game_id: int, user_id: int, move_uci: str):
     # Lock the row to prevent "Double Move" exploits
@@ -35,17 +36,18 @@ def process_move(db: Session, game_id: int, user_id: int, move_uci: str):
 
     if board.is_game_over():
         game.status = "COMPLETED"
-        if board.is_checkmate():
-            game.result = "WHITE_WIN" if is_white else "BLACK_WIN"
-            # Update balances: Winner gets 2x stake (minus platform fee if any)
-            winner = db.query(User).filter(User.id == user_id).first()
-            winner.balance += (game.stake * 2)
-        else:
-            game.result = "DRAW"
-            # Return stakes to both
-            db.query(User).filter(User.id.in_([game.white_id, game.black_id])).update({
-                User.balance: User.balance + game.stake
-            }, synchronize_session=False)
+        game.completed_at = datetime.utcnow()
+
+    if board.is_checkmate():
+        game.result = "WHITE_WIN" if is_white else "BLACK_WIN"
+        winner = db.query(User).filter(User.id == user_id).first()
+        winner.balance += (game.stake * 2)
+    else:
+        game.result = "DRAW"
+        db.query(User).filter(User.id.in_([game.white_id, game.black_id])).update({
+            User.balance: User.balance + game.stake
+        }, synchronize_session=False)
+
 
     db.commit()
     return {"success": True, "fen": game.current_fen, "gameOver": board.is_game_over()}

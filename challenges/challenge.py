@@ -1,85 +1,58 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func, inspect
 from datetime import datetime, timedelta
 from typing import List
-from db import get_db 
-from models import User, Challenge, Game
-from challenge_schema import CreateChallengeSchema, AvailableChallenge, MyChallenge, UserMini, ChallengeList
-from middleware import get_current_user_id, get_current_user 
 
-router = APIRouter()
+from core.database import get_db
+from core.models import User, Challenge, Game
+from challenge_schema import (
+    CreateChallengeSchema,
+    AvailableChallenge,
+    MyChallenge,
+    UserMini,
+    ChallengeList,
+)
+from game_management.dependencies import get_current_user_id
 
+router = APIRouter(tags=["Challenges"])
 
-def orm_to_dict(obj, follow_rels: List[str] = None):
-    data = {}
-    for column in obj.__table__.columns:
-        data[column.key] = getattr(obj, column.key)
-
-    if follow_rels:
-        mapper = inspect(obj).mapper
-        for rel in follow_rels:
-            if rel in mapper.relationships:
-                related_obj = getattr(obj, rel)
-                if related_obj:
-                    
-                    user_data = {
-                        "id": related_obj.id,
-                        "username": related_obj.username,
-                        "displayName": related_obj.display_name,
-                    }
-                    data[rel] = user_data
-    return data
+def orm_user_mini(user: User) -> UserMini:
+    return UserMini(
+        id=user.id,
+        username=user.username,
+        displayName=user.display_name,
+    )
 
 
-@router.post("/", status_code=201)
+@router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_challenge(
     req: CreateChallengeSchema,
     user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-   
-    user = db.query(User).filter(User.id == user_id).with_for_update().first() 
+    user = db.query(User).filter(User.id == user_id).with_for_update().first()
 
     if not user or user.balance < req.stake:
         raise HTTPException(
             status_code=400,
-            detail={
-                "success": False,
-                "error": {"code": "INSUFFICIENT_BALANCE", "message": "Insufficient balance"}
-            }
+            detail={"code": "INSUFFICIENT_BALANCE", "message": "Insufficient balance"},
         )
 
-   
+    expires_at = datetime.utcnow() + timedelta(hours=1)
 
-    # the challange expires in 1 hr
-    expires_at = datetime.utcnow() + timedelta(hours=1) 
-    
-    new_challenge = Challenge(
+    challenge = Challenge(
         creator_id=user_id,
         stake=req.stake,
         expires_at=expires_at,
-        time_control="60/0", 
-        status="OPEN"
+        time_control=req.time_control or "60/0",
+        status="OPEN",
     )
-    db.add(new_challenge)
+
+    db.add(challenge)
     db.commit()
-    db.refresh(new_challenge)
+    db.refresh(challenge)
 
-    #  return response 
-    return {
-        "success": True,
-        "data": {
-            "id": new_challenge.id,
-            "creatorId": new_challenge.creator_id,
-            "stake": new_challenge.stake,
-            "timeControl": new_challenge.time_control,
-            "status": new_challenge.status,
-            "createdAt": new_challenge.created_at,
-            "expiresAt": new_challenge.expires_at,
-        }
-    }
-
+    return {"success": True, "data": challenge}
 
 
 
@@ -87,216 +60,146 @@ async def create_challenge(
 async def get_available_challenges(
     db: Session = Depends(get_db),
     limit: int = Query(10, ge=1, le=100),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    
-    challenges = db.query(Challenge)\
-        .filter(Challenge.status == "OPEN")\
-        .offset(offset)\
-        .limit(limit)\
-        .all()
-    
-  
-    total = db.query(Challenge).filter(Challenge.status == "OPEN").count()
+    base_query = db.query(Challenge).filter(
+        Challenge.status == "OPEN",
+        Challenge.expires_at > datetime.utcnow(),
+    )
 
-   
-    challenge_data = []
-    for challenge in challenges:
-      
-        creator_mini = UserMini(
-            id=challenge.creator.id, 
-            username=challenge.creator.username, 
-            displayName=challenge.creator.display_name 
+    total = base_query.count()
+    challenges = base_query.offset(offset).limit(limit).all()
+
+    data = [
+        AvailableChallenge(
+            id=c.id,
+            creatorId=c.creator_id,
+            stake=c.stake,
+            timeControl=c.time_control,
+            status=c.status,
+            createdAt=c.created_at,
+            expiresAt=c.expires_at,
+            creator=orm_user_mini(c.creator),
         )
-        
-       
-        challenge_data.append(AvailableChallenge(
-            id=challenge.id,
-            creatorId=challenge.creator_id,
-            stake=challenge.stake,
-            timeControl=challenge.time_control,
-            status=challenge.status,
-            createdAt=challenge.created_at,
-            expiresAt=challenge.expires_at,
-            creator=creator_mini
-        ))
-    
+        for c in challenges
+    ]
+
     return {
         "success": True,
-        "data": challenge_data,
-        "pagination": {"total": total, "limit": limit, "offset": offset}
+        "data": data,
+        "pagination": {"total": total, "limit": limit, "offset": offset},
     }
-
 
 
 
 @router.get("/my")
 async def get_my_challenges(
     user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-   
-    challenges = db.query(Challenge)\
-        .filter(Challenge.creator_id == user_id)\
-        .all()
+    challenges = db.query(Challenge).filter(Challenge.creator_id == user_id).all()
+    return {"success": True, "data": challenges}
 
-    # Format output
-    challenge_data = [
-        MyChallenge.model_validate(c, context={'acceptor': c.acceptor})
-        for c in challenges
-    ]
-
-    return {"success": True, "data": challenge_data}
 
 
 @router.post("/{challenge_id}/accept")
 async def accept_challenge(
     challenge_id: int,
     user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-   
     try:
-        # check challenge existence and status
-        challenge = db.query(Challenge).filter(Challenge.id == challenge_id).with_for_update().first()
-        
+        challenge = (
+            db.query(Challenge)
+            .filter(Challenge.id == challenge_id)
+            .with_for_update()
+            .first()
+        )
+
         if not challenge:
-            raise HTTPException(
-                status_code=404,
-                detail={"success": False, "error": {"code": "CHALLENGE_NOT_FOUND", "message": "Challenge not found"}}
-            )
-        
+            raise HTTPException(status_code=404, detail="Challenge not found")
+
         if challenge.status != "OPEN":
-            raise HTTPException(
-                status_code=400,
-                detail={"success": False, "error": {"code": "CHALLENGE_NOT_AVAILABLE", "message": "Challenge is not available"}}
-            )
-        
-        # prevent accepting your own challenge
+            raise HTTPException(status_code=400, detail="Challenge not available")
+
+        if challenge.expires_at <= datetime.utcnow():
+            raise HTTPException(status_code=400, detail="Challenge expired")
+
         if challenge.creator_id == user_id:
-             raise HTTPException(
-                status_code=400,
-                detail={"success": False, "error": {"code": "INVALID_ACTION", "message": "Cannot accept your own challenge"}}
-            )
+            raise HTTPException(status_code=400, detail="Cannot accept your own challenge")
 
-        # check acceptor balance
-        acceptor = db.query(User).filter(User.id == user_id).with_for_update().first()
-        
-        if not acceptor or acceptor.balance < challenge.stake:
-            raise HTTPException(
-                status_code=400,
-                detail={"success": False, "error": {"code": "INSUFFICIENT_BALANCE", "message": "Insufficient balance"}}
-            )
-            
-       
+        acceptor = (
+            db.query(User)
+            .filter(User.id == user_id)
+            .with_for_update()
+            .first()
+        )
 
-        # create game
+        creator = (
+            db.query(User)
+            .filter(User.id == challenge.creator_id)
+            .with_for_update()
+            .first()
+        )
+
+        if acceptor.balance < challenge.stake:
+            raise HTTPException(status_code=400, detail="Insufficient balance")
+
+        # Escrow: deduct from both
+        creator.balance -= challenge.stake
+        acceptor.balance -= challenge.stake
+
         new_game = Game(
-            challenge_id=challenge_id,
+            challenge_id=challenge.id,
             white_id=challenge.creator_id,
             black_id=user_id,
             stake=challenge.stake,
+            status="ONGOING",
+            current_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         )
-        db.add(new_game)
 
-        # update challenge
         challenge.status = "ACCEPTED"
         challenge.acceptor_id = user_id
-        
+
+        db.add(new_game)
         db.commit()
         db.refresh(new_game)
-        
+
         return {
             "success": True,
             "data": {
-                "challengeId": challenge_id,
+                "challengeId": challenge.id,
                 "gameId": new_game.id,
-                "status": "ACCEPTED",
-                "message": "Challenge accepted. Game started!",
-            }
+                "message": "Challenge accepted. Game started.",
+            },
         }
-    except Exception as e:
+
+    except Exception:
         db.rollback()
-        raise e
+        raise
+
 
 
 @router.post("/{challenge_id}/cancel")
 async def cancel_challenge(
     challenge_id: int,
     user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-   
-    try:
-        #  Check challenge existence
-        challenge = db.query(Challenge).filter(Challenge.id == challenge_id).with_for_update().first()
-        
-        if not challenge:
-            raise HTTPException(
-                status_code=404,
-                detail={"success": False, "error": {"code": "CHALLENGE_NOT_FOUND", "message": "Challenge not found"}}
-            )
+    challenge = (
+        db.query(Challenge)
+        .filter(Challenge.id == challenge_id)
+        .with_for_update()
+        .first()
+    )
 
-        
-        if challenge.creator_id != user_id:
-            raise HTTPException(
-                status_code=403,
-                detail={"success": False, "error": {"code": "FORBIDDEN", "message": "Forbidden"}}
-            )
-        
-        #  Cancel the challenge (Update status)
-        challenge.status = "CANCELLED"
-        db.commit()
-        
-        return {
-            "success": True, 
-            "message": "Challenge cancelled successfully"
-        }
-    except Exception as e:
-        db.rollback()
-        raise e
-    
-    
-    
-    @router.post("/{challenge_id}/accept")
-async def accept_challenge(
-    challenge_id: int,
-    user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    try:
-        # Lock both the challenge and the acceptor to prevent race conditions
-        challenge = db.query(Challenge).filter(Challenge.id == challenge_id).with_for_update().first()
-        acceptor = db.query(User).filter(User.id == user_id).with_for_update().first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
 
-        if not challenge or challenge.status != "OPEN":
-            raise HTTPException(status_code=404, detail="Challenge unavailable")
-        
-        if acceptor.balance < challenge.stake:
-            raise HTTPException(status_code=400, detail="Insufficient balance")
+    if challenge.creator_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
-        # Deduct stake from both players immediately to "escrow" it
-        creator = db.query(User).filter(User.id == challenge.creator_id).with_for_update().first()
-        creator.balance -= challenge.stake
-        acceptor.balance -= challenge.stake
+    challenge.status = "CANCELLED"
+    db.commit()
 
-        # Create the game
-        new_game = Game(
-            challenge_id=challenge_id,
-            white_id=challenge.creator_id,
-            black_id=user_id,
-            stake=challenge.stake,
-            status="ONGOING",
-            current_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-        )
-        
-        challenge.status = "ACCEPTED"
-        challenge.acceptor_id = user_id
-        
-        db.add(new_game)
-        db.commit()
-        
-        return {"success": True, "gameId": new_game.id}
-    except Exception as e:
-        db.rollback()
-        raise e
+    return {"success": True, "message": "Challenge cancelled successfully"}

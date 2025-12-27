@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from db import get_db
-from models import User
+from core.database import get_db
+from core.models import User
 from users_schema import UpdateProfileSchema
 from fastapi.security import HTTPBearer
 import jwt

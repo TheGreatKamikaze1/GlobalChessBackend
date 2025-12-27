@@ -3,7 +3,7 @@ import os
 from fastapi import Header, HTTPException, Depends
 from sqlalchemy.orm import Session
 from datetime import datetime
-from db import get_db, User 
+from core.database import get_db, User 
 
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
 

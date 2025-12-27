@@ -15,3 +15,7 @@ def get_db():
         yield db
     finally:
         db.close()
+        
+        
+        #db.py
+        from sqlalchemy import create_engine, Column, Integer, String
