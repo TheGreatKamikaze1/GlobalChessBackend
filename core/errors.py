@@ -3,9 +3,6 @@
 from fastapi import status
 from core.exceptions import AppException
 
-
-
-
 class ErrorCode:
     AUTH_INVALID_CREDENTIALS = "AUTH_INVALID_CREDENTIALS"
     AUTH_UNAUTHORIZED = "AUTH_UNAUTHORIZED"
@@ -23,8 +20,6 @@ class ErrorCode:
     INSUFFICIENT_BALANCE = "INSUFFICIENT_BALANCE"
 
 
-
-
 class ErrorMessage:
     INVALID_CREDENTIALS = "Invalid email or password"
     UNAUTHORIZED = "You are not authorized to perform this action"
@@ -40,7 +35,6 @@ class ErrorMessage:
     CHALLENGE_ALREADY_ACCEPTED = "Challenge has already been accepted"
 
     INSUFFICIENT_BALANCE = "Insufficient wallet balance"
-
 
 
 

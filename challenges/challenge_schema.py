@@ -3,13 +3,11 @@ from datetime import datetime
 from typing import Optional, List
 
 #  Input Schemas 
-
 class CreateChallengeSchema(BaseModel):
     
     stake: float = Field(..., gt=0, description="The amount staked in the challenge.")
 
 # nested Schemas for Output
-
 class UserMini(BaseModel):
     id: int
     username: str
@@ -21,9 +19,6 @@ class UserMini(BaseModel):
        
         alias_generator = lambda string: string.replace('_', '').replace('displayname', 'displayName')
         populate_by_name = True
-
-
-
     
 class ChallengeBase(BaseModel):
     id: int

@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+httpx
+python-dotenv
+pydantic[email]
+stripe>=10.0.0
