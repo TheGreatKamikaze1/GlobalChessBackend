@@ -27,7 +27,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Replace in production
+    allow_origins=["http://localhost:8080/dashboard"],  # Replace in production
     allow_methods=["*"],
     allow_headers=["*"],
 )
