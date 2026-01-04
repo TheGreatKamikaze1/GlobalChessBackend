@@ -16,6 +16,8 @@ from stats.main import router as stats_router
 from sockets.game_socket import game_socket
 
 
+from core.models import Base
+
 
 Base.metadata.create_all(bind=engine)
 
