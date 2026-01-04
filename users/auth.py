@@ -8,7 +8,7 @@ import os
 
 from core.database import get_db
 from core.models import User  
-from auth_schema import RegisterSchema, LoginSchema  
+from users.auth_schema import RegisterSchema, LoginSchema  
 
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
 
