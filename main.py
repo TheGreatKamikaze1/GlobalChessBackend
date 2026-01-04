@@ -1,11 +1,11 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi.middleware import SlowAPIMiddleware
+# from slowapi.middleware import SlowAPIMiddleware
 
 from core.database import engine, Base
 from core.handlers import app_exception_handler
 from core.exceptions import AppException
-from core.rate_limit import limiter
+# from core.rate_limit import limiter
 
 from users.auth import router as auth_router
 from game_management.game import router as game_router
@@ -32,8 +32,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.state.limiter = limiter
-app.add_middleware(SlowAPIMiddleware)
+# app.state.limiter = limiter
+# app.add_middleware(SlowAPIMiddleware)
 
 
 app.add_exception_handler(AppException, app_exception_handler)
