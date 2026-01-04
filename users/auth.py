@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
+from fastapi.security import OAuth2PasswordBearer
+from datetime import datetime, timedelta
 import jwt
 import os
-from datetime import datetime, timedelta
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
-from core.database import get_db, User 
+
+from core.database import get_db
+from core.models import User  
 from auth_schema import RegisterSchema, LoginSchema  
 
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
@@ -16,6 +17,14 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 
+def create_token(data: dict):
+    payload = {
+        **data,
+        "exp": datetime.utcnow() + timedelta(days=7)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
@@ -23,6 +32,7 @@ def get_current_user(
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         user_id = payload.get("id")
+
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -37,35 +47,40 @@ def get_current_user(
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-def create_token(data: dict):
-    payload = {
-        **data,
-        "exp": datetime.utcnow() + timedelta(days=7)
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
-
-
 
 @router.post("/register")
 def register(req: RegisterSchema, db: Session = Depends(get_db)):
+
     if db.query(User).filter(User.email == req.email).first():
         raise HTTPException(status_code=400, detail="User already exists")
-    
+
     hashed_pw = pwd_context.hash(req.password)
 
     new_user = User(
         email=req.email,
         username=req.username,
-        displayName=req.displayName, 
+        display_name=req.displayName,  
         password=hashed_pw
     )
+
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
     token = create_token({"id": new_user.id, "email": new_user.email})
-    return {"success": True, "data": {"user": {"id": new_user.id}, "token": token}}
 
+    return {
+        "success": True,
+        "data": {
+            "user": {
+                "id": new_user.id,
+                "email": new_user.email,
+                "username": new_user.username,
+                "displayName": new_user.display_name
+            },
+            "token": token
+        }
+    }
 
 
 @router.post("/login")
@@ -73,14 +88,29 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
 
     user = db.query(User).filter(User.email == req.email).first()
     if not user:
-        raise HTTPException(status_code=401, detail={"success": False, "error": {"code": "INVALID_CREDENTIALS", "message": "Invalid credentials"}})
-    
-    # Verify password
-    valid = pwd_context.verify(req.password, user.password)
-    if not valid:
-        raise HTTPException(status_code=401, detail={"success": False, "error": {"code": "INVALID_CREDENTIALS", "message": "Invalid credentials"}})
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "INVALID_CREDENTIALS",
+                    "message": "Invalid credentials"
+                }
+            }
+        )
 
-    # Generate token
+    if not pwd_context.verify(req.password, user.password):
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "INVALID_CREDENTIALS",
+                    "message": "Invalid credentials"
+                }
+            }
+        )
+
     token = create_token({"id": user.id, "email": user.email})
 
     return {
