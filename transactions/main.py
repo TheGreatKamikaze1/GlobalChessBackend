@@ -10,7 +10,7 @@ from transactions.schemas import (
     TransactionResponse,
     TransactionHistoryResponse,
 )
-from users.auth import get_current_user
+from core.auth import get_current_user
 
 router = APIRouter(prefix="/api/transactions", tags=["Transactions"])
 
