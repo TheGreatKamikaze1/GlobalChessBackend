@@ -6,3 +6,5 @@ psycopg2-binary
 pydantic
 httpx
 stripe>=10.0.0
+slowapi
+chess
