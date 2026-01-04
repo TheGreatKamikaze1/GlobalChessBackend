@@ -1,6 +1,12 @@
 fastapi
-uvicorn[standard]
-httpx
+uvicorn
 python-dotenv
-pydantic[email]
+sqlalchemy
+psycopg2-binary
+pydantic
+httpx
 stripe>=10.0.0
+slowapi
+chess
+passlib
+jwt
