@@ -8,5 +8,5 @@ httpx
 stripe>=10.0.0
 slowapi
 chess
-passlib
-jwt
+passlib[bcrypt]
+PyJWT
