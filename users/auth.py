@@ -1,56 +1,18 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
-from fastapi.security import OAuth2PasswordBearer
-from datetime import datetime, timedelta
-import jwt
-import os
 
 from core.database import get_db
-from core.models import User  
-from users.auth_schema import RegisterSchema, LoginSchema  
+from core.models import User
+from users.auth_schema import RegisterSchema, LoginSchema
+from core.auth import create_token
 
-JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
-
-router = APIRouter()
+router = APIRouter(prefix="/auth", tags=["Auth"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
-
-
-def create_token(data: dict):
-    payload = {
-        **data,
-        "exp": datetime.utcnow() + timedelta(days=7)
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
-
-
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
-) -> User:
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        user_id = payload.get("id")
-
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-
-        return user
-
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
 
 
 @router.post("/register")
 def register(req: RegisterSchema, db: Session = Depends(get_db)):
-
     if db.query(User).filter(User.email == req.email).first():
         raise HTTPException(status_code=400, detail="User already exists")
 
@@ -59,8 +21,8 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
     new_user = User(
         email=req.email,
         username=req.username,
-        display_name=req.displayName,  
-        password=hashed_pw
+        display_name=req.displayName,
+        password=hashed_pw,
     )
 
     db.add(new_user)
@@ -76,40 +38,19 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
                 "id": new_user.id,
                 "email": new_user.email,
                 "username": new_user.username,
-                "displayName": new_user.display_name
+                "displayName": new_user.display_name,
             },
-            "token": token
-        }
+            "token": token,
+        },
     }
 
 
 @router.post("/login")
 def login(req: LoginSchema, db: Session = Depends(get_db)):
-
     user = db.query(User).filter(User.email == req.email).first()
-    if not user:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "INVALID_CREDENTIALS",
-                    "message": "Invalid credentials"
-                }
-            }
-        )
 
-    if not pwd_context.verify(req.password, user.password):
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "INVALID_CREDENTIALS",
-                    "message": "Invalid credentials"
-                }
-            }
-        )
+    if not user or not pwd_context.verify(req.password, user.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token({"id": user.id, "email": user.email})
 
@@ -120,8 +61,8 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
                 "id": user.id,
                 "email": user.email,
                 "username": user.username,
-                "displayName": user.display_name
+                "displayName": user.display_name,
             },
-            "token": token
-        }
+            "token": token,
+        },
     }

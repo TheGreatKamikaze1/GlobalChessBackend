@@ -60,7 +60,7 @@ def get_dashboard_stats(db: Session, user_id: int):
         "draws": draws,
         "winRate": win_rate,
         "currentBalance": current_balance,
-        "totalEarnings": 0.0, # Suggesting a separate ledger for this in production
+        "totalEarnings": 0.0, 
         "currentRating": current_rating,
         "recentGames": recent_games
     }
