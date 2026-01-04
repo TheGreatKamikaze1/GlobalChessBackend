@@ -5,7 +5,7 @@ from typing import List
 
 from core.database import get_db
 from core.models import User, Challenge, Game
-from challenge_schema import (
+from challenges.challenge_schema import (
     CreateChallengeSchema,
     AvailableChallenge,
     MyChallenge,
