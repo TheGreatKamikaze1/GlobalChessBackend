@@ -1,5 +1,6 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from core.init_db import init_db
 # from slowapi.middleware import SlowAPIMiddleware
 
 from core.database import engine, Base
@@ -20,6 +21,15 @@ from core.models import Base
 
 
 Base.metadata.create_all(bind=engine)
+
+
+
+
+app = FastAPI()
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
 
 
 app = FastAPI(

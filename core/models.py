@@ -15,6 +15,7 @@ from core.database import Base
 
 
 
+
 # USER
 
 class User(Base):
