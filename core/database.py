@@ -1,11 +1,24 @@
 import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Production logic: Always pull from environment variables
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/chess_db")
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=10, max_overflow=20)
+load_dotenv()
+
+# Pull database URL from environment
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL is not set in the environment")
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20
+)
+
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 Base = declarative_base()
 
@@ -15,7 +28,3 @@ def get_db():
         yield db
     finally:
         db.close()
-        
-        
-        #db.py
-        from sqlalchemy import create_engine, Column, Integer, String
