@@ -5,7 +5,7 @@ from core.models import Game, User
 from datetime import datetime
 
 def process_move(db: Session, game_id: int, user_id: int, move_uci: str):
-    # Lock the row to prevent "Double Move" exploits
+  
     game = db.query(Game).filter(Game.id == game_id).with_for_update().first()
     
     if not game or game.status != "ONGOING":

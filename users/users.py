@@ -1,30 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
 from core.database import get_db
 from core.models import User
 from users_schema import UpdateProfileSchema
-from fastapi.security import HTTPBearer
-import jwt
-
-JWT_SECRET = "your-secret-key"
+from core.auth import get_current_user_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-security = HTTPBearer()
 
-# decode token and get user id
-def get_current_user(token: str = Depends(security)):
-    try:
-        payload = jwt.decode(token.credentials, JWT_SECRET, algorithms=["HS256"])
-        return payload["id"]
-    except:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-
-#getprofile
 @router.get("/profile")
-def get_profile(user_id: int = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_profile(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
     user = db.query(User).filter(User.id == user_id).first()
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -35,28 +26,22 @@ def get_profile(user_id: int = Depends(get_current_user), db: Session = Depends(
             "email": user.email,
             "displayName": user.displayName,
             "balance": float(user.balance),
-            "rating": user.currentRating
+            "rating": user.currentRating,
         },
     }
 
 
-
-
-#updateprofile
-
 @router.put("/profile")
 def update_profile(
     data: UpdateProfileSchema,
-    user_id: int = Depends(get_current_user),
+    user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-
     user = db.query(User).filter(User.id == user_id).first()
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Update fields
     if data.displayName is not None:
         user.displayName = data.displayName
 
@@ -77,11 +62,11 @@ def update_profile(
     }
 
 
-#get balance
-
 @router.get("/balance")
-def get_balance(user_id: int = Depends(get_current_user), db: Session = Depends(get_db)):
-
+def get_balance(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
     user = db.query(User).filter(User.id == user_id).first()
 
     if not user:
