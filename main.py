@@ -39,7 +39,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080/dashboard"],  # Replace in production
+    allow_origins=["https://global-connect-chess.netlify.app"],  # Replace in production
     allow_methods=["*"],
     allow_headers=["*"],
 )
