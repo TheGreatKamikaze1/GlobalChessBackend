@@ -13,7 +13,7 @@ async def initialize_payment(email: str, amount_naira: float):
         "currency": "NGN",
     }
 
-    base_url = settings.PAYSTACK_BASE_URL.rstrip("/")
+    base_url = str(settings.PAYSTACK_BASE_URL).rstrip("/")
     url = f"{base_url}/transaction/initialize"
 
     headers = {
