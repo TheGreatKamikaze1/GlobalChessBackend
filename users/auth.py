@@ -9,14 +9,13 @@ from core.auth import create_token
 
 router = APIRouter(tags=["Auth"])
 
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 BCRYPT_MAX_BYTES = 72
 
-def truncate_password(password: str) -> bytes:
+
+def normalize_password(password: str) -> bytes:
+   
     return password.encode("utf-8")[:BCRYPT_MAX_BYTES]
-
-
 
 
 @router.post("/register")
@@ -25,12 +24,12 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == req.email).first():
         raise HTTPException(status_code=400, detail="User already exists")
 
-    hashed_pw = pwd_context.hash(req.password)
+    hashed_pw = pwd_context.hash(normalize_password(req.password))
 
     new_user = User(
         email=req.email,
         username=req.username,
-        display_name=req.displayName,   # <-- matches DB field name
+        display_name=req.displayName,
         password=hashed_pw,
     )
 
@@ -58,7 +57,13 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
 def login(req: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == req.email).first()
 
-    if not user or not pwd_context.verify(req.password, user.password):
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not pwd_context.verify(
+        normalize_password(req.password),
+        user.password
+    ):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token({"id": user.id, "email": user.email})
