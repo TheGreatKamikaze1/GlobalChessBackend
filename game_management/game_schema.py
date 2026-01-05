@@ -24,7 +24,7 @@ class GameResponse(BaseModel):
     id: int
     white: PlayerDetails
     black: PlayerDetails
-    stake: int
+    stake: float
     status: str
     moves: List[str]
     currentFen: str
@@ -52,7 +52,7 @@ class ResignResponse(BaseModel):
 class GameHistoryItem(BaseModel):
     id: int
     opponent: PlayerDetails
-    stake: int
+    stake: float
     result: str
     moveCount: int
     completedAt: datetime
@@ -67,7 +67,7 @@ class PaginatedHistory(BaseModel):
 class ActiveGameItem(BaseModel):
     id: int
     opponent: PlayerDetails
-    stake: int
+    stake: float
     status: str
     startedAt: datetime
     currentTurn: str # 'white' or 'black'

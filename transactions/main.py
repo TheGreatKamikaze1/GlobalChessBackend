@@ -12,7 +12,7 @@ from transactions.schemas import (
 )
 from core.auth import get_current_user
 
-router = APIRouter(prefix="/api/transactions", tags=["Transactions"])
+router = APIRouter(tags=["Transactions"])
 
 
 @router.post("/deposit", response_model=TransactionResponse)
