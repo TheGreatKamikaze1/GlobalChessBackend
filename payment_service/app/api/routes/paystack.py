@@ -6,7 +6,7 @@ from app.services.paystack_service import (
     verify_webhook_signature,
 )
 
-router = APIRouter(prefix="/paystack", tags=["Paystack"])
+router = APIRouter( tags=["Paystack"])
 
 
 @router.post("/initialize")
