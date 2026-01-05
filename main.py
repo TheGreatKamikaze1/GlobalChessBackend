@@ -14,6 +14,7 @@ from challenges.challenge import router as challenge_router
 from transactions.main import router as transaction_router
 from stats.main import router as stats_router
 
+
 from sockets.game_socket import game_socket
 
 
@@ -57,6 +58,14 @@ app.include_router(game_router, prefix="/api/games", tags=["Games"])
 app.include_router(challenge_router, prefix="/api/challenges", tags=["Challenges"])
 app.include_router(transaction_router, prefix="/api/transactions", tags=["Transactions"])
 app.include_router(stats_router, prefix="/api/stats", tags=["Statistics"])
+from fastapi import FastAPI
+
+
+app = FastAPI()
+
+# Register the router
+app.include_router(payment_router)
+
 
 
 @app.websocket("/ws/game")
