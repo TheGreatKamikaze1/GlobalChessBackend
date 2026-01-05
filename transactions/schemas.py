@@ -1,21 +1,16 @@
 from pydantic import BaseModel, Field
-from decimal import Decimal
 from typing import Optional, List
+from decimal import Decimal
+from datetime import datetime
+
 
 class DepositRequest(BaseModel):
-    amount: Decimal = Field(gt=0)
-    paymentMethod: str
-    reference: str
-
-
-class AccountDetails(BaseModel):
-    bankName: str
-    accountNumber: str
+    amount: Decimal = Field(..., gt=0)
+    reference: Optional[str] = None
 
 
 class WithdrawRequest(BaseModel):
-    amount: Decimal = Field(gt=0)
-    accountDetails: AccountDetails
+    amount: Decimal = Field(..., gt=0)
 
 
 class TransactionData(BaseModel):
@@ -23,11 +18,11 @@ class TransactionData(BaseModel):
     amount: Decimal
     newBalance: Decimal
     status: str
-    createdAt: str
+    createdAt: datetime
 
 
 class TransactionResponse(BaseModel):
-    success: bool
+    success: bool = True
     data: TransactionData
 
 
@@ -37,10 +32,10 @@ class TransactionHistoryItem(BaseModel):
     type: str
     reference: Optional[str]
     status: str
-    createdAt: str
+    createdAt: datetime
 
 
 class TransactionHistoryResponse(BaseModel):
-    success: bool
+    success: bool = True
     data: List[TransactionHistoryItem]
     pagination: dict
