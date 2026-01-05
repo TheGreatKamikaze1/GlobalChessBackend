@@ -51,6 +51,7 @@ app.add_middleware(
 app.add_exception_handler(AppException, app_exception_handler)
 
 
+
 app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
 app.include_router(game_router, prefix="/api/games", tags=["Games"])
 app.include_router(challenge_router, prefix="/api/challenges", tags=["Challenges"])

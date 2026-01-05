@@ -7,21 +7,24 @@ from core.models import User
 from users.auth_schema import RegisterSchema, LoginSchema
 from core.auth import create_token
 
-router = APIRouter(prefix="/auth", tags=["Auth"])
+router = APIRouter(tags=["Auth"])   
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 @router.post("/register")
 def register(req: RegisterSchema, db: Session = Depends(get_db)):
+    # Check if user already exists
     if db.query(User).filter(User.email == req.email).first():
         raise HTTPException(status_code=400, detail="User already exists")
 
     hashed_pw = pwd_context.hash(req.password)
 
+   
     new_user = User(
         email=req.email,
         username=req.username,
-        display_name=req.displayName,
+        displayName=req.displayName,
         password=hashed_pw,
     )
 
@@ -38,7 +41,7 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
                 "id": new_user.id,
                 "email": new_user.email,
                 "username": new_user.username,
-                "displayName": new_user.display_name,
+                "displayName": new_user.displayName,
             },
             "token": token,
         },
@@ -61,7 +64,7 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
                 "id": user.id,
                 "email": user.email,
                 "username": user.username,
-                "displayName": user.display_name,
+                "displayName": user.displayName,
             },
             "token": token,
         },
