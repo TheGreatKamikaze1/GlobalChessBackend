@@ -5,9 +5,6 @@ from payment_service.app.core.config import settings
 
 
 async def initialize_payment(email: str, amount_naira: float):
-    if amount_naira <= 0:
-        raise ValueError("Invalid amount")
-
     amount_kobo = int(amount_naira * 100)
 
     payload = {
@@ -16,25 +13,33 @@ async def initialize_payment(email: str, amount_naira: float):
         "currency": "NGN",
     }
 
+    url = f"{settings.PAYSTACK_BASE_URL}/transaction/initialize"
+
     headers = {
         "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
         "Content-Type": "application/json",
+        "User-Agent": "FastAPI-Paystack-Test",  # IMPORTANT
     }
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            f"{settings.PAYSTACK_BASE_URL}/transaction/initialize",
-            json=payload,
-            headers=headers,
-        )
+    print("=== PAYSTACK DEBUG ===")
+    print("URL:", url)
+    print("HEADERS:", headers)
+    print("PAYLOAD:", payload)
 
-    
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(url, json=payload, headers=headers)
+
+    print("STATUS:", response.status_code)
+    print("RESPONSE HEADERS:", dict(response.headers))
+    print("RAW BODY:", response.text)
+
     if response.status_code != 200:
         raise RuntimeError(
             f"Paystack error {response.status_code}: {response.text}"
         )
 
     return response.json()
+
 
 
 async def verify_payment(reference: str):
