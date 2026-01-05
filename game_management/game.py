@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 import json
 from datetime import datetime
+from datetime import timezone
 
 from core.database import get_db
 from core.models import Game, User
@@ -129,7 +130,7 @@ def resign_game(
     game.status = "COMPLETED"
     game.result = result
     game.winner_id = winner_id
-    game.completed_at = datetime.utcnow()
+    game.completed_at = datetime.now(timezone.utc)
 
     winner = db.query(User).filter(User.id == winner_id).with_for_update().first()
     winner.balance += (game.stake * 2)

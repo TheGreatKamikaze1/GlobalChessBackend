@@ -46,7 +46,7 @@ def process_move(db: Session, game_id: int, user_id: int, move_uci: str):
 
     # --- GAME OVER HANDLING ---
     game.status = "COMPLETED"
-    game.completed_at = datetime.utcnow()
+    game.completed_at = datetime.now(timezone.utc)
 
     winner_id = None
     result = None
