@@ -8,6 +8,8 @@ from payment_service.app.services.paystack_service import (
 )
 from payment_service.app.models.payment import Payment
 from payment_service.app.db.session import get_db
+from payment_service.app.models.payment import Payment
+
 
 router = APIRouter(prefix="/paystack", tags=["Paystack"])
 
