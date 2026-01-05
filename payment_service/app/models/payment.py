@@ -23,7 +23,7 @@ async def paystack_initialize(
 
     existing = db.query(Payment).filter_by(reference=reference).first()
     if existing:
-        return response
+        return response  # idempotent safe return
 
     payment = Payment(
         reference=reference,
@@ -70,8 +70,9 @@ async def paystack_webhook(
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     payload = await request.json()
+    event = payload.get("event")
 
-    if payload.get("event") != "charge.success":
+    if event != "charge.success":
         return {"status": "ignored"}
 
     data = payload["data"]
@@ -90,8 +91,10 @@ async def paystack_webhook(
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
 
+
     if payment.verified:
         return {"status": "already processed"}
+
 
     if currency != "NGN":
         raise HTTPException(status_code=400, detail="Invalid currency")
