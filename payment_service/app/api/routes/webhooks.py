@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
 import stripe
-from app.core.config import settings
+from payment_service.app.core.config import settings
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
-from app.schemas.payment import StripePayment
-from app.services.stripe_service import create_payment_intent
+from payment_service.app.schemas.payment import StripePayment
+from payment_service.app.services.stripe_service import create_payment_intent
 
 router = APIRouter(prefix="/stripe", tags=["Stripe"])
 

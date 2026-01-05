@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request, Header
-from app.schemas.payment import PaystackPayment
-from app.services.paystack_service import (
+from payment_service.app.schemas.payment import PaystackPayment
+from payment_service.app.services.paystack_service import (
     initialize_payment,
     verify_payment,
     verify_webhook_signature,
