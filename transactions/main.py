@@ -21,17 +21,15 @@ def deposit_funds(
     db: Session = Depends(get_db),
     current_user: int = Depends(get_current_user),
 ):
-    # Prevent duplicate references
     if payload.reference:
         existing = db.query(Transaction).filter_by(reference=payload.reference).first()
         if existing:
             raise HTTPException(status_code=400, detail="Duplicate transaction reference")
 
-    user = db.query(User).filter(User.id == current_user).first()
+    user = db.query(User).filter(User.id == current_user).with_for_update().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Update balance
     user.balance = (user.balance or Decimal("0.00")) + payload.amount
 
     txn = Transaction(
@@ -53,7 +51,7 @@ def deposit_funds(
             "amount": payload.amount,
             "newBalance": user.balance,
             "status": txn.status,
-            "createdAt": txn.created_at.isoformat(),
+            "createdAt": txn.created_at,
         },
     }
 
@@ -64,14 +62,13 @@ def withdraw_funds(
     db: Session = Depends(get_db),
     current_user: int = Depends(get_current_user),
 ):
-    user = db.query(User).filter(User.id == current_user).first()
+    user = db.query(User).filter(User.id == current_user).with_for_update().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     if user.balance is None or user.balance < payload.amount:
         raise HTTPException(status_code=400, detail="Insufficient funds")
 
-    # Deduct balance
     user.balance -= payload.amount
 
     txn = Transaction(
@@ -92,7 +89,7 @@ def withdraw_funds(
             "amount": payload.amount,
             "newBalance": user.balance,
             "status": txn.status,
-            "createdAt": txn.created_at.isoformat(),
+            "createdAt": txn.created_at,
         },
     }
 
@@ -111,6 +108,7 @@ def transaction_history(
         query = query.filter(Transaction.type == type)
 
     total = query.count()
+
     txns = (
         query.order_by(Transaction.created_at.desc())
         .offset(offset)
@@ -127,7 +125,7 @@ def transaction_history(
                 "type": t.type,
                 "reference": t.reference,
                 "status": t.status,
-                "createdAt": t.created_at.isoformat(),
+                "createdAt": t.created_at,
             }
             for t in txns
         ],
