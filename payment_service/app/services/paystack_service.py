@@ -28,6 +28,12 @@ async def initialize_payment(email: str, amount_naira: float):
             headers=headers,
         )
 
+    
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Paystack error {response.status_code}: {response.text}"
+        )
+
     return response.json()
 
 
