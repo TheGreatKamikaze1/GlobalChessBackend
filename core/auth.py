@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from datetime import timezone
 
 from core.database import get_db
 from core.models import User
@@ -18,8 +19,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 def create_token(data: dict) -> str:
     payload = {
         **data,
-        "exp": datetime.utcnow() + timedelta(days=7),
-        "iat": datetime.utcnow(),
+        "exp": datetime.now(timezone.utc) + timedelta(days=7),
+        "iat": datetime.now(timezone.utc),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
