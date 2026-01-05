@@ -1,12 +1,22 @@
+
+
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List
 
 
 class CreateChallengeSchema(BaseModel):
-    stake: float = Field(..., gt=0)
-    time_control: str = Field("60/0")
-    color: str = Field("auto", regex="^(white|black|auto)$")
+    stake: float = Field(..., gt=0, description="The amount staked in the challenge.")
+    time_control: str = Field(
+        "60/0",
+        description="Time control format (e.g., '60/0' for 60 minutes no increment)."
+    )
+    color: str = Field(
+        "auto",
+        description="Preferred color: 'white', 'black', or 'auto'.",
+        pattern="^(white|black|auto)$"
+    )
+
 
 
 class UserMini(BaseModel):
@@ -14,8 +24,10 @@ class UserMini(BaseModel):
     username: str
     displayName: str
 
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True
+    }
+
 
 
 class ChallengeBase(BaseModel):
