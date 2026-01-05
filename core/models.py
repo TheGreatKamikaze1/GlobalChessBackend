@@ -74,6 +74,9 @@ class Challenge(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
+   
+    color_preference = Column(String, default="auto")  # values: "white", "black", "auto"
+
     creator = relationship(
         "User",
         back_populates="created_challenges",
@@ -91,6 +94,7 @@ class Challenge(Base):
         back_populates="challenge",
         uselist=False,
     )
+
 
 
 class Game(Base):

@@ -24,6 +24,7 @@ def orm_user_mini(user: User):
     }
 
 
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_challenge(
     req: CreateChallengeSchema,
@@ -38,13 +39,16 @@ async def create_challenge(
             detail={"code": "INSUFFICIENT_BALANCE", "message": "Insufficient balance"},
         )
 
+    # ✅ validate color
+    color = req.color.lower() if req.color in ["white", "black", "auto"] else "auto"
+
     challenge = Challenge(
         creator_id=user_id,
         stake=req.stake,
         expires_at=datetime.utcnow() + timedelta(hours=1),
         time_control=req.time_control,
         status="OPEN",
-        color_preference=req.color,
+        color_preference=color,  # now safe
     )
 
     db.add(challenge)
@@ -61,8 +65,12 @@ async def create_challenge(
             "status": challenge.status,
             "createdAt": challenge.created_at,
             "expiresAt": challenge.expires_at,
+            "colorPreference": challenge.color_preference,
         },
     }
+
+
+
 
 
 @router.get("/available", response_model=ChallengeList)
@@ -79,19 +87,22 @@ async def get_available_challenges(
     total = base_query.count()
     challenges = base_query.offset(offset).limit(limit).all()
 
+    
     data = [
-        AvailableChallenge(
-            id=c.id,
-            creatorId=c.creator_id,
-            stake=c.stake,
-            timeControl=c.time_control,
-            status=c.status,
-            createdAt=c.created_at,
-            expiresAt=c.expires_at,
-            creator=orm_user_mini(c.creator),
-        )
-        for c in challenges
-    ]
+    AvailableChallenge(
+        id=c.id,
+        creatorId=c.creator_id,
+        stake=c.stake,
+        timeControl=c.time_control,
+        status=c.status,
+        createdAt=c.created_at,
+        expiresAt=c.expires_at,
+        colorPreference=c.color_preference,  
+        creator=orm_user_mini(c.creator),
+    )
+    for c in challenges
+]
+
 
     return {
         "success": True,
@@ -113,6 +124,8 @@ async def accept_challenge(
             .with_for_update()
             .first()
         )
+
+
 
         if not challenge:
             raise HTTPException(status_code=404, detail="Challenge not found")
