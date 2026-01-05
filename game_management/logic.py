@@ -3,6 +3,7 @@ import json
 from sqlalchemy.orm import Session
 from core.models import Game, User
 from datetime import datetime
+from datetime import timezone
 
 
 def process_move(db: Session, game_id: int, user_id: int, move_uci: str):
