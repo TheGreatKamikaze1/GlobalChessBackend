@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from core.models import User
-from users.users_schema import UpdateProfileSchema  
+from users.users_schema import UpdateProfileSchema
 from core.auth import get_current_user_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -24,9 +24,9 @@ def get_profile(
         "data": {
             "id": user.id,
             "email": user.email,
-            "displayName": user.displayName,
+            "displayName": user.display_name,
             "balance": float(user.balance or 0),
-            "rating": user.currentRating or 0,
+            "rating": user.current_rating or 0,
         },
     }
 
@@ -43,10 +43,10 @@ def update_profile(
         raise HTTPException(status_code=404, detail="User not found")
 
     if data.displayName is not None:
-        user.displayName = data.displayName
+        user.display_name = data.displayName
 
     if data.avatarUrl is not None:
-        user.avatarUrl = data.avatarUrl
+        user.avatar_url = data.avatarUrl
 
     db.commit()
     db.refresh(user)
@@ -55,9 +55,9 @@ def update_profile(
         "success": True,
         "data": {
             "id": user.id,
-            "displayName": user.displayName,
-            "avatarUrl": user.avatarUrl,
-            "updatedAt": user.updatedAt,
+            "displayName": user.display_name,
+            "avatarUrl": user.avatar_url,
+            "updatedAt": user.updated_at,
         },
     }
 

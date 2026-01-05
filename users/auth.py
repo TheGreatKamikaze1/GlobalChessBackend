@@ -7,7 +7,7 @@ from core.models import User
 from users.auth_schema import RegisterSchema, LoginSchema
 from core.auth import create_token
 
-router = APIRouter(tags=["Auth"])   
+router = APIRouter(tags=["Auth"])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -20,11 +20,10 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
 
     hashed_pw = pwd_context.hash(req.password)
 
-   
     new_user = User(
         email=req.email,
         username=req.username,
-        displayName=req.displayName,
+        display_name=req.displayName,   
         password=hashed_pw,
     )
 
@@ -41,7 +40,7 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
                 "id": new_user.id,
                 "email": new_user.email,
                 "username": new_user.username,
-                "displayName": new_user.displayName,
+                "displayName": new_user.display_name,
             },
             "token": token,
         },
@@ -64,7 +63,7 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
                 "id": user.id,
                 "email": user.email,
                 "username": user.username,
-                "displayName": user.displayName,
+                "displayName": user.display_name,
             },
             "token": token,
         },
