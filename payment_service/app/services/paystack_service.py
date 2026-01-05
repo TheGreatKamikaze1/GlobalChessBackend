@@ -1,7 +1,7 @@
 import hmac
 import hashlib
 import httpx
-from app.core.config import settings
+from payment_service.app.core.config import settings
 
 
 async def initialize_payment(email: str, amount: int):
