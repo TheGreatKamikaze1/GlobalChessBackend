@@ -1,4 +1,3 @@
-# users/auth.py
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
@@ -9,29 +8,29 @@ from users.auth_schema import RegisterSchema, LoginSchema
 from core.auth import create_token
 
 router = APIRouter(tags=["Auth"])
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Bcrypt max bytes
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 BCRYPT_MAX_BYTES = 72
 
 def truncate_password(password: str) -> bytes:
-    
-    encoded = password.encode("utf-8")
-    if len(encoded) > BCRYPT_MAX_BYTES:
-        encoded = encoded[:BCRYPT_MAX_BYTES]
-    return encoded
+    return password.encode("utf-8")[:BCRYPT_MAX_BYTES]
+
+
+
 
 @router.post("/register")
 def register(req: RegisterSchema, db: Session = Depends(get_db)):
+    # Check if user already exists
     if db.query(User).filter(User.email == req.email).first():
         raise HTTPException(status_code=400, detail="User already exists")
 
-    hashed_pw = pwd_context.hash(truncate_password(req.password))
+    hashed_pw = pwd_context.hash(req.password)
 
     new_user = User(
         email=req.email,
         username=req.username,
-        display_name=req.displayName,
+        display_name=req.displayName,   # <-- matches DB field name
         password=hashed_pw,
     )
 
@@ -54,11 +53,12 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
         },
     }
 
+
 @router.post("/login")
 def login(req: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == req.email).first()
 
-    if not user or not pwd_context.verify(truncate_password(req.password), user.password):
+    if not user or not pwd_context.verify(req.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token({"id": user.id, "email": user.email})
