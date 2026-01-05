@@ -26,7 +26,7 @@ def deposit_funds(
         if existing:
             raise HTTPException(status_code=400, detail="Duplicate transaction reference")
 
-    user = db.query(User).filter(User.id == current_user).with_for_update().first()
+    user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -62,7 +62,7 @@ def withdraw_funds(
     db: Session = Depends(get_db),
     current_user: int = Depends(get_current_user),
 ):
-    user = db.query(User).filter(User.id == current_user).with_for_update().first()
+    user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -72,7 +72,7 @@ def withdraw_funds(
     user.balance -= payload.amount
 
     txn = Transaction(
-        user_id=current_user,
+        user_id=current_user.id,
         amount=payload.amount,
         type="WITHDRAWAL",
         status="PENDING",
@@ -102,7 +102,7 @@ def transaction_history(
     db: Session = Depends(get_db),
     current_user: int = Depends(get_current_user),
 ):
-    query = db.query(Transaction).filter(Transaction.user_id == current_user)
+    query = db.query(Transaction).filter(Transaction.user_id == current_user.id)
 
     if type != "ALL":
         query = query.filter(Transaction.type == type)
