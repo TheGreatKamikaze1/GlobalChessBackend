@@ -19,21 +19,30 @@ router = APIRouter(tags=["Transactions"])
 def deposit_funds(
     payload: DepositRequest,
     db: Session = Depends(get_db),
-    current_user: int = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    # Prevent duplicate references
     if payload.reference:
         existing = db.query(Transaction).filter_by(reference=payload.reference).first()
         if existing:
             raise HTTPException(status_code=400, detail="Duplicate transaction reference")
 
-    user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
+    # Lock + fetch user
+    user = (
+        db.query(User)
+        .filter(User.id == current_user.id)
+        .with_for_update()
+        .first()
+    )
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Update balance
     user.balance = (user.balance or Decimal("0.00")) + payload.amount
 
     txn = Transaction(
-        user_id=current_user,
+        user_id=current_user.id,    
         amount=payload.amount,
         type="DEPOSIT",
         reference=payload.reference,
@@ -51,7 +60,7 @@ def deposit_funds(
             "amount": payload.amount,
             "newBalance": user.balance,
             "status": txn.status,
-            "createdAt": txn.created_at,
+            "createdAt": txn.created_at.isoformat(),
         },
     }
 
@@ -60,19 +69,26 @@ def deposit_funds(
 def withdraw_funds(
     payload: WithdrawRequest,
     db: Session = Depends(get_db),
-    current_user: int = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
+    user = (
+        db.query(User)
+        .filter(User.id == current_user.id)
+        .with_for_update()
+        .first()
+    )
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     if user.balance is None or user.balance < payload.amount:
         raise HTTPException(status_code=400, detail="Insufficient funds")
 
+    # Deduct
     user.balance -= payload.amount
 
     txn = Transaction(
-        user_id=current_user.id,
+        user_id=current_user.id,     
         amount=payload.amount,
         type="WITHDRAWAL",
         status="PENDING",
@@ -89,9 +105,10 @@ def withdraw_funds(
             "amount": payload.amount,
             "newBalance": user.balance,
             "status": txn.status,
-            "createdAt": txn.created_at,
+            "createdAt": txn.created_at.isoformat(),
         },
     }
+
 
 
 @router.get("/history", response_model=TransactionHistoryResponse)
