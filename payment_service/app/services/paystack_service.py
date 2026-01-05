@@ -13,25 +13,17 @@ async def initialize_payment(email: str, amount_naira: float):
         "currency": "NGN",
     }
 
-    url = f"{settings.PAYSTACK_BASE_URL}/transaction/initialize"
+    base_url = settings.PAYSTACK_BASE_URL.rstrip("/")
+    url = f"{base_url}/transaction/initialize"
 
     headers = {
         "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
         "Content-Type": "application/json",
-        "User-Agent": "FastAPI-Paystack-Test",  # IMPORTANT
+        "User-Agent": "FastAPI-Paystack-Test",
     }
-
-    print("=== PAYSTACK DEBUG ===")
-    print("URL:", url)
-    print("HEADERS:", headers)
-    print("PAYLOAD:", payload)
 
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(url, json=payload, headers=headers)
-
-    print("STATUS:", response.status_code)
-    print("RESPONSE HEADERS:", dict(response.headers))
-    print("RAW BODY:", response.text)
 
     if response.status_code != 200:
         raise RuntimeError(
@@ -39,6 +31,7 @@ async def initialize_payment(email: str, amount_naira: float):
         )
 
     return response.json()
+
 
 
 
