@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from core.models import User
-from users_schema import UpdateProfileSchema
+from users.users_schema import UpdateProfileSchema  
 from core.auth import get_current_user_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -25,8 +25,8 @@ def get_profile(
             "id": user.id,
             "email": user.email,
             "displayName": user.displayName,
-            "balance": float(user.balance),
-            "rating": user.currentRating,
+            "balance": float(user.balance or 0),
+            "rating": user.currentRating or 0,
         },
     }
 
@@ -75,7 +75,7 @@ def get_balance(
     return {
         "success": True,
         "data": {
-            "balance": user.balance,
+            "balance": float(user.balance or 0),
             "currency": "USD",
         },
     }
