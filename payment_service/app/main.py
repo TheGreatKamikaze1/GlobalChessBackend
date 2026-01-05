@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi import APIRouter
-from app.api.routes import paystack, stripe, webhooks
-from app.api.routes.paystack import router as payment_router
+from payment_service.app.api.routes import paystack, stripe, webhooks
+from payment_service.app.api.routes.paystack import router as payment_router
 
 app = FastAPI(title="Payment Service", version="1.0.0")
 

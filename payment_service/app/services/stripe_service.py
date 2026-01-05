@@ -1,5 +1,5 @@
 import stripe
-from app.core.config import settings
+from payment_service.app.core.config import settings
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
