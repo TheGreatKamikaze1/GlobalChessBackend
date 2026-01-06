@@ -107,3 +107,22 @@ def get_balance(
             "currency": "USD",
         },
     }
+
+@router.get("/auth-status")
+def auth_status(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    return {
+        "success": True,
+        "data": {
+            "authenticated": True,
+            "userId": user.id,
+            "email": user.email,
+        },
+    }
