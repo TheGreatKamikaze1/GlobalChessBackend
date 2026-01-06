@@ -1,13 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 import json
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
 from core.database import get_db
 from core.models import Game, User
-from game_management.dependencies import get_current_user_id
+from core.auth import get_current_user_id 
 from game_management.logic import process_move
 from game_management.game_schema import (
     GameResponse,
@@ -22,29 +21,25 @@ from game_management.game_schema import (
     ActiveGameItem,
 )
 
-router = APIRouter(tags=["Games"])
+router = APIRouter(prefix="/games", tags=["Games"])
+
 
 
 def get_game_or_404(db: Session, game_id: str) -> Game:
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
-        raise HTTPException(
-            status_code=404,
-            detail={"success": False, "error": {"code": "GAME_NOT_FOUND", "message": "Game not found"}},
-        )
+        raise HTTPException(status_code=404, detail="Game not found")
     return game
 
 
 def check_participant(game: Game, user_id: str):
     if user_id not in (game.white_id, game.black_id):
-        raise HTTPException(
-            status_code=403,
-            detail={"success": False, "error": {"code": "FORBIDDEN", "message": "Not a participant"}},
-        )
+        raise HTTPException(status_code=403, detail="Not a participant")
 
 
 def get_current_turn(moves: list[str]) -> str:
     return "white" if len(moves) % 2 == 0 else "black"
+
 
 
 @router.get("/{game_id}", response_model=GameResponse)
@@ -73,6 +68,7 @@ def get_game(game_id: str, db: Session = Depends(get_db)):
     }
 
 
+
 @router.post("/{game_id}/move", response_model=MoveResponse)
 def make_move(
     game_id: str,
@@ -83,15 +79,7 @@ def make_move(
     result = process_move(db, game_id, user_id, req.move)
 
     if "error" in result:
-        error_map = {
-            "GAME_NOT_ACTIVE": (400, "Game not active"),
-            "NOT_YOUR_TURN": (403, "Not your turn"),
-            "ILLEGAL_MOVE": (400, "Illegal move"),
-            "INVALID_FORMAT": (400, "Invalid move format"),
-            "NOT_PARTICIPANT": (403, "Not a participant"),
-        }
-        code, msg = error_map.get(result["error"], (400, "Move failed"))
-        raise HTTPException(code, msg)
+        raise HTTPException(status_code=400, detail=result["error"])
 
     return {
         "gameId": game_id,
@@ -103,19 +91,14 @@ def make_move(
     }
 
 
+
 @router.post("/{game_id}/resign", response_model=ResignResponse)
 def resign_game(
     game_id: str,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    game = (
-        db.query(Game)
-        .filter(Game.id == game_id)
-        .with_for_update()
-        .first()
-    )
-
+    game = db.query(Game).filter(Game.id == game_id).with_for_update().first()
     if not game:
         raise HTTPException(404, "Game not found")
 
@@ -133,7 +116,7 @@ def resign_game(
     game.completed_at = datetime.now(timezone.utc)
 
     winner = db.query(User).filter(User.id == winner_id).with_for_update().first()
-    winner.balance += (game.stake * 2)
+    winner.balance += game.stake * 2
 
     db.commit()
 
@@ -143,3 +126,98 @@ def resign_game(
         "winnerId": winner_id,
         "message": "You resigned. Game over.",
     }
+
+
+
+@router.get("/history", response_model=PaginatedHistory)
+def game_history(
+    pagination: PaginationParams = Depends(),
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    query = (
+        db.query(Game)
+        .filter(
+            or_(Game.white_id == user_id, Game.black_id == user_id),
+            Game.status == "COMPLETED",
+        )
+        .order_by(Game.completed_at.desc())
+    )
+
+    total = query.count()
+    games = query.offset(pagination.offset).limit(pagination.limit).all()
+
+    items = []
+    for g in games:
+        opponent = g.black if g.white_id == user_id else g.white
+        result = (
+            "DRAW"
+            if g.result == "DRAW"
+            else "WIN"
+            if g.winner_id == user_id
+            else "LOSS"
+        )
+
+        items.append(
+            GameHistoryItem(
+                id=str(g.id),
+                opponent=PlayerDetails(
+                    id=opponent.id,
+                    username=opponent.username,
+                    displayName=opponent.display_name,
+                ),
+                stake=float(g.stake),
+                result=result,
+                moveCount=len(json.loads(g.moves or "[]")),
+                completedAt=g.completed_at,
+            )
+        )
+
+    return {
+        "success": True,
+        "data": items,
+        "pagination": {
+            "limit": pagination.limit,
+            "offset": pagination.offset,
+            "total": total,
+        },
+    }
+
+
+
+@router.get("/active", response_model=ActiveGamesResponse)
+def active_games(
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    games = (
+        db.query(Game)
+        .filter(
+            or_(Game.white_id == user_id, Game.black_id == user_id),
+            Game.status == "ONGOING",
+        )
+        .order_by(Game.started_at.desc())
+        .all()
+    )
+
+    items = []
+    for g in games:
+        opponent = g.black if g.white_id == user_id else g.white
+        moves = json.loads(g.moves or "[]")
+
+        items.append(
+            ActiveGameItem(
+                id=str(g.id),
+                opponent=PlayerDetails(
+                    id=opponent.id,
+                    username=opponent.username,
+                    displayName=opponent.display_name,
+                ),
+                stake=float(g.stake),
+                status=g.status,
+                startedAt=g.started_at,
+                currentTurn=get_current_turn(moves),
+            )
+        )
+
+    return {"success": True, "data": items}
