@@ -19,6 +19,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 def create_token(data: dict) -> str:
     payload = {
         **data,
+        "id": str(data.get("id")),
         "exp": datetime.now(timezone.utc) + timedelta(days=7),
         "iat": datetime.now(timezone.utc),
     }
@@ -53,5 +54,5 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-def get_current_user_id(user: User = Depends(get_current_user)) -> int:
+def get_current_user_id(user: User = Depends(get_current_user)) -> str:
     return user.id
