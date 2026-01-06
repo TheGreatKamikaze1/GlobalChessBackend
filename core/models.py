@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Text,
+    Integer,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -26,10 +27,9 @@ class User(Base):
 
     balance = Column(Numeric(12, 2), default=0.00)
     avatar_url = Column(String, nullable=True)
-
-    games_played = Column(String, default=0)
-    games_won = Column(String, default=0)
-    current_rating = Column(String, default=1200)
+    games_played = Column(Integer, default=0)
+    games_won = Column(Integer, default=0)
+    current_rating = Column(Integer, default=1200)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
