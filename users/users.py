@@ -9,6 +9,33 @@ from core.auth import get_current_user_id
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
+
+@router.get("/me")
+def get_current_user(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {
+        "success": True,
+        "data": {
+            "id": user.id,
+            "email": user.email,
+            "username": user.username,
+            "displayName": user.display_name,
+            "avatarUrl": user.avatar_url,
+            "balance": float(user.balance or 0),
+            "rating": user.current_rating or 1200,
+            "createdAt": user.created_at,
+            "updatedAt": user.updated_at,
+        },
+    }
+
+
 @router.get("/profile")
 def get_profile(
     user_id: str = Depends(get_current_user_id),
@@ -29,6 +56,7 @@ def get_profile(
             "rating": user.current_rating or 0,
         },
     }
+
 
 
 @router.put("/profile")
