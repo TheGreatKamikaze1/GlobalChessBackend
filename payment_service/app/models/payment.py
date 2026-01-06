@@ -1,6 +1,5 @@
 from sqlalchemy import (
     Column,
-    Integer,
     String,
     Boolean,
     DateTime,
@@ -8,6 +7,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.sql import func
+import uuid
 
 from payment_service.app.db.base import Base
 
@@ -15,7 +15,7 @@ from payment_service.app.db.base import Base
 class Payment(Base):
     __tablename__ = "payments"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
     reference = Column(String, nullable=False, unique=True, index=True)
     email = Column(String, nullable=False)

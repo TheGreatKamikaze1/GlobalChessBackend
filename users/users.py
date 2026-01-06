@@ -11,7 +11,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 @router.get("/profile")
 def get_profile(
-    user_id: int = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.id == user_id).first()
@@ -34,7 +34,7 @@ def get_profile(
 @router.put("/profile")
 def update_profile(
     data: UpdateProfileSchema,
-    user_id: int = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.id == user_id).first()
@@ -64,7 +64,7 @@ def update_profile(
 
 @router.get("/balance")
 def get_balance(
-    user_id: int = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.id == user_id).first()
