@@ -21,7 +21,7 @@ from game_management.game_schema import (
     ActiveGameItem,
 )
 
-router = APIRouter(prefix="/games", tags=["Games"])
+router = APIRouter( tags=["Games"])
 
 
 
@@ -221,3 +221,47 @@ def active_games(
         )
 
     return {"success": True, "data": items}
+
+@router.get("/all")
+def all_games(
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    games = (
+        db.query(Game)
+        .filter(or_(Game.white_id == user_id, Game.black_id == user_id))
+        .order_by(Game.started_at.desc())
+        .all()
+    )
+
+    response = []
+
+    for g in games:
+        opponent = g.black if g.white_id == user_id else g.white
+        moves = json.loads(g.moves or "[]")
+
+        if g.status == "ONGOING":
+            result = "ongoing"
+            date = g.started_at
+        else:
+            if g.result == "DRAW":
+                result = "draw"
+            elif g.winner_id == user_id:
+                result = "won"
+            else:
+                result = "lost"
+            date = g.completed_at
+
+        response.append({
+            "id": str(g.id),
+            "opponent": opponent.username,
+            "stake": float(g.stake),
+            "result": result,
+            "date": date,
+            "moves": len(moves),
+        })
+
+    return {
+        "success": True,
+        "data": response
+    }
