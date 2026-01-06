@@ -1,5 +1,3 @@
-
-
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List
@@ -18,9 +16,8 @@ class CreateChallengeSchema(BaseModel):
     )
 
 
-
 class UserMini(BaseModel):
-    id: int
+    id: str
     username: str
     displayName: str
 
@@ -29,10 +26,9 @@ class UserMini(BaseModel):
     }
 
 
-
 class ChallengeBase(BaseModel):
-    id: int
-    creatorId: int
+    id: str
+    creatorId: str
     stake: float
     timeControl: str
     status: str

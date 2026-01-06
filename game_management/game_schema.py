@@ -1,14 +1,12 @@
-
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List, Dict
 
 
 class PlayerDetails(BaseModel):
-    id: int
+    id: str
     username: str
     displayName: str
-
 
 
 class MoveRequest(BaseModel):
@@ -21,7 +19,7 @@ class PaginationParams(BaseModel):
 
 
 class GameResponse(BaseModel):
-    id: int
+    id: str
     white: PlayerDetails
     black: PlayerDetails
     stake: float
@@ -34,7 +32,7 @@ class GameResponse(BaseModel):
 
 
 class MoveResponse(BaseModel):
-    gameId: int
+    gameId: str
     move: str
     currentFen: str
     isCheck: bool
@@ -43,14 +41,14 @@ class MoveResponse(BaseModel):
 
 
 class ResignResponse(BaseModel):
-    gameId: int
+    gameId: str
     result: str
-    winnerId: int
+    winnerId: str
     message: str
 
 
 class GameHistoryItem(BaseModel):
-    id: int
+    id: str
     opponent: PlayerDetails
     stake: float
     result: str
@@ -65,14 +63,14 @@ class PaginatedHistory(BaseModel):
 
 
 class ActiveGameItem(BaseModel):
-    id: int
+    id: str
     opponent: PlayerDetails
     stake: float
     status: str
     startedAt: datetime
-    currentTurn: str # 'white' or 'black'
+    currentTurn: str  # 'white' or 'black'
+
 
 class ActiveGamesResponse(BaseModel):
     success: bool = True
     data: List[ActiveGameItem]
-    

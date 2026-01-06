@@ -26,7 +26,7 @@ def orm_user_mini(user: User):
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_challenge(
     req: CreateChallengeSchema,
-    user_id: int = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.id == user_id).with_for_update().first()
@@ -106,8 +106,8 @@ async def get_available_challenges(
 
 @router.post("/{challenge_id}/accept")
 async def accept_challenge(
-    challenge_id: int,
-    user_id: int = Depends(get_current_user_id),
+    challenge_id: str,
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     try:

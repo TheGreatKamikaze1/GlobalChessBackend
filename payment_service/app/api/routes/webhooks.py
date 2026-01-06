@@ -25,6 +25,6 @@ async def stripe_webhook(request: Request):
 
     if event["type"] == "payment_intent.succeeded":
         payment_intent = event["data"]["object"]
-        # TODO: persist payment_intent["id"], amount, status
+        
 
     return {"status": "success"}

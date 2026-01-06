@@ -1,7 +1,7 @@
 from datetime import datetime
+import uuid
 from sqlalchemy import (
     Column,
-    Integer,
     String,
     Numeric,
     DateTime,
@@ -17,7 +17,7 @@ from core.database import Base
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
     email = Column(String, unique=True, index=True, nullable=False)
     username = Column(String, unique=True, index=True, nullable=False)
@@ -27,9 +27,9 @@ class User(Base):
     balance = Column(Numeric(12, 2), default=0.00)
     avatar_url = Column(String, nullable=True)
 
-    games_played = Column(Integer, default=0)
-    games_won = Column(Integer, default=0)
-    current_rating = Column(Integer, default=1200)
+    games_played = Column(String, default=0)
+    games_won = Column(String, default=0)
+    current_rating = Column(String, default=1200)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -62,10 +62,10 @@ class User(Base):
 class Challenge(Base):
     __tablename__ = "challenges"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
-    creator_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    acceptor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    creator_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    acceptor_id = Column(String(36), ForeignKey("users.id"), nullable=True)
 
     stake = Column(Numeric(12, 2), nullable=False)
     time_control = Column(String, default="60/0")
@@ -74,7 +74,6 @@ class Challenge(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
-   
     color_preference = Column(String, default="auto")  # values: "white", "black", "auto"
 
     creator = relationship(
@@ -96,27 +95,26 @@ class Challenge(Base):
     )
 
 
-
 class Game(Base):
     __tablename__ = "games"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
     challenge_id = Column(
-        Integer,
+        String(36),
         ForeignKey("challenges.id"),
         unique=True,
         nullable=True,
     )
 
-    white_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    black_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    white_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    black_id = Column(String(36), ForeignKey("users.id"), nullable=False)
 
     stake = Column(Numeric(12, 2), nullable=False)
 
     status = Column(String, default="ONGOING")
     result = Column(String, nullable=True)
-    winner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    winner_id = Column(String(36), ForeignKey("users.id"), nullable=True)
 
     moves = Column(Text, default="[]", nullable=False)
     current_fen = Column(
@@ -149,9 +147,9 @@ class Game(Base):
 class Transaction(Base):
     __tablename__ = "transactions"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)
 
     type = Column(String, nullable=False)

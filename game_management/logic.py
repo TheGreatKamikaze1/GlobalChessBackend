@@ -6,7 +6,7 @@ from datetime import datetime
 from datetime import timezone
 
 
-def process_move(db: Session, game_id: int, user_id: int, move_uci: str):
+def process_move(db: Session, game_id: str, user_id: str, move_uci: str):
 
     game = db.query(Game).filter(Game.id == game_id).with_for_update().first()
 

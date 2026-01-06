@@ -25,7 +25,7 @@ from game_management.game_schema import (
 router = APIRouter(tags=["Games"])
 
 
-def get_game_or_404(db: Session, game_id: int) -> Game:
+def get_game_or_404(db: Session, game_id: str) -> Game:
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
         raise HTTPException(
@@ -35,7 +35,7 @@ def get_game_or_404(db: Session, game_id: int) -> Game:
     return game
 
 
-def check_participant(game: Game, user_id: int):
+def check_participant(game: Game, user_id: str):
     if user_id not in (game.white_id, game.black_id):
         raise HTTPException(
             status_code=403,
@@ -48,7 +48,7 @@ def get_current_turn(moves: list[str]) -> str:
 
 
 @router.get("/{game_id}", response_model=GameResponse)
-def get_game(game_id: int, db: Session = Depends(get_db)):
+def get_game(game_id: str, db: Session = Depends(get_db)):
     game = get_game_or_404(db, game_id)
 
     return {
@@ -75,10 +75,10 @@ def get_game(game_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{game_id}/move", response_model=MoveResponse)
 def make_move(
-    game_id: int,
+    game_id: str,
     req: MoveRequest,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
 ):
     result = process_move(db, game_id, user_id, req.move)
 
@@ -105,9 +105,9 @@ def make_move(
 
 @router.post("/{game_id}/resign", response_model=ResignResponse)
 def resign_game(
-    game_id: int,
+    game_id: str,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
 ):
     game = (
         db.query(Game)

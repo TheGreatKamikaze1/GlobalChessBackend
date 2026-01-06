@@ -11,7 +11,7 @@ class LoginSchema(BaseModel):
     password: str
 
 class UserResponse(BaseModel):
-    id: int
+    id: str
     email: EmailStr
     username: str
     displayName: str
