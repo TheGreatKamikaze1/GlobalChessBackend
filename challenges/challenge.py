@@ -37,7 +37,7 @@ async def create_challenge(
             detail={"code": "INSUFFICIENT_BALANCE", "message": "Insufficient balance"},
         )
 
-    # Make expires_at timezone-aware
+  
     expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
     challenge = Challenge(
@@ -150,7 +150,7 @@ async def accept_challenge(
         elif color_pref == "black":
             white_id = user_id
             black_id = challenge.creator_id
-        else:  # auto = random
+        else:  
             if random.choice([True, False]):
                 white_id = challenge.creator_id
                 black_id = user_id

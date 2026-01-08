@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request, Header, Depends
 from sqlalchemy.orm import Session
+import httpx
 
 from payment_service.app.schemas.payment import PaystackPayment
 from payment_service.app.services.paystack_service import (
@@ -8,56 +9,10 @@ from payment_service.app.services.paystack_service import (
 )
 from payment_service.app.models.payment import Payment
 from payment_service.app.db.session import get_db
-from payment_service.app.models.payment import Payment
+from payment_service.app.core.config import settings
 
 
-router = APIRouter(prefix="/paystack", tags=["Paystack"])
-
-
-@router.post("/initialize")
-async def paystack_initialize(
-    data: PaystackPayment,
-    db: Session = Depends(get_db),
-):
-    response = await initialize_payment(data.email, data.amount)
-
-    reference = response["data"]["reference"]
-
-    existing = db.query(Payment).filter_by(reference=reference).first()
-    if existing:
-        return response
-
-    payment = Payment(
-        reference=reference,
-        email=data.email,
-        amount=data.amount,
-        currency="NGN",
-        status="pending",
-    )
-
-    db.add(payment)
-    db.commit()
-
-    return response
-
-
-@router.get("/verify/{reference}")
-async def verify_payment_status(
-    reference: str,
-    db: Session = Depends(get_db),
-):
-    payment = db.query(Payment).filter_by(reference=reference).first()
-
-    if not payment:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    return {
-        "reference": payment.reference,
-        "status": payment.status,
-        "amount": payment.amount,
-        "currency": payment.currency,
-        "verified": payment.verified,
-    }
+router = APIRouter( tags=["Paystack"])
 
 
 @router.post("/webhook")
@@ -71,20 +26,24 @@ async def paystack_webhook(
     if not verify_webhook_signature(body, x_paystack_signature):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    payload = await request.json()
+    event = await request.json()
 
-    if payload.get("event") != "charge.success":
+    if event.get("event") != "charge.success":
         return {"status": "ignored"}
 
-    data = payload["data"]
+    data = event["data"]
 
     reference = data["reference"]
-    amount = data["amount"] / 100
+    amount = data["amount"] / 100  
     currency = data["currency"]
+
+    if currency != "NGN":
+        raise HTTPException(status_code=400, detail="Invalid currency")
+
 
     payment = (
         db.query(Payment)
-        .filter_by(reference=reference)
+        .filter(Payment.reference == reference)
         .with_for_update()
         .first()
     )
@@ -95,15 +54,34 @@ async def paystack_webhook(
     if payment.verified:
         return {"status": "already processed"}
 
-    if currency != "NGN":
-        raise HTTPException(status_code=400, detail="Invalid currency")
-
+   
     if float(payment.amount) != float(amount):
         raise HTTPException(status_code=400, detail="Amount mismatch")
 
+   
     payment.status = "success"
     payment.verified = True
-
     db.commit()
 
-    return {"status": "payment verified"}
+    # CREDIT USER WALLET
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{settings.TRANSACTIONS_BASE_URL}/transactions/deposit",
+            headers={
+                "Authorization": f"Bearer {payment.user_token}",
+                "X-Internal-Call": "PAYSTACK",
+            },
+            json={
+                "amount": amount,
+                "reference": reference,
+            },
+            timeout=10,
+        )
+
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to credit user wallet",
+            )
+
+    return {"status": "payment verified & wallet credited"}

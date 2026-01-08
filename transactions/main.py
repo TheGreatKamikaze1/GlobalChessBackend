@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from sqlalchemy.orm import Session
 from decimal import Decimal
 
@@ -19,13 +19,28 @@ router = APIRouter(tags=["Transactions"])
 def deposit_funds(
     payload: DepositRequest,
     db: Session = Depends(get_db),
+    x_internal_call: str = Header(None),
     current_user: User = Depends(get_current_user),
 ):
+    # Block manual deposits
+    if x_internal_call != "PAYSTACK":
+        raise HTTPException(
+            status_code=403,
+            detail="Deposits must be made via Paystack",
+        )
+
     # Prevent duplicate references
     if payload.reference:
-        existing = db.query(Transaction).filter_by(reference=payload.reference).first()
+        existing = (
+            db.query(Transaction)
+            .filter_by(reference=payload.reference)
+            .first()
+        )
         if existing:
-            raise HTTPException(status_code=400, detail="Duplicate transaction reference")
+            raise HTTPException(
+                status_code=400,
+                detail="Duplicate transaction reference",
+            )
 
     # Lock + fetch user
     user = (
@@ -38,11 +53,11 @@ def deposit_funds(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Update balance
+   
     user.balance = (user.balance or Decimal("0.00")) + payload.amount
 
     txn = Transaction(
-        user_id=current_user.id,    
+        user_id=current_user.id,
         amount=payload.amount,
         type="DEPOSIT",
         reference=payload.reference,
@@ -57,10 +72,12 @@ def deposit_funds(
         "success": True,
         "data": {
             "transactionId": str(txn.id),
-            "amount": payload.amount,
+            "amount": txn.amount,
+            "type": txn.type,
+            "reference": txn.reference,
             "newBalance": user.balance,
             "status": txn.status,
-            "createdAt": txn.created_at.isoformat(),
+            "createdAt": txn.created_at,
         },
     }
 
@@ -84,11 +101,10 @@ def withdraw_funds(
     if user.balance is None or user.balance < payload.amount:
         raise HTTPException(status_code=400, detail="Insufficient funds")
 
-    # Deduct
     user.balance -= payload.amount
 
     txn = Transaction(
-        user_id=current_user.id,     
+        user_id=current_user.id,
         amount=payload.amount,
         type="WITHDRAWAL",
         status="PENDING",
@@ -105,10 +121,9 @@ def withdraw_funds(
             "amount": payload.amount,
             "newBalance": user.balance,
             "status": txn.status,
-            "createdAt": txn.created_at.isoformat(),
+            "createdAt": txn.created_at,
         },
     }
-
 
 
 @router.get("/history", response_model=TransactionHistoryResponse)
@@ -152,3 +167,4 @@ def transaction_history(
             "offset": offset,
         },
     }
+

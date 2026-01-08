@@ -68,7 +68,7 @@ def process_move(db: Session, game_id: str, user_id: str, move_uci: str):
         winner.balance += (game.stake * 2)
 
     else:
-        # real draw (stalemate, repetition, insufficient material etc)
+        # draw (stalemate, repetition, insufficient material etc)
         game.result = "DRAW"
         db.query(User).filter(User.id.in_([game.white_id, game.black_id])).update(
             {User.balance: User.balance + game.stake},
