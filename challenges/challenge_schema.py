@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List
-
+from uuid import UUID
 
 class CreateChallengeSchema(BaseModel):
     stake: float = Field(..., gt=0, description="The amount staked in the challenge.")
@@ -17,7 +17,7 @@ class CreateChallengeSchema(BaseModel):
 
 
 class UserMini(BaseModel):
-    id: str
+    id: UUID
     username: str
     displayName: str
 
@@ -27,8 +27,8 @@ class UserMini(BaseModel):
 
 
 class ChallengeBase(BaseModel):
-    id: str
-    creatorId: str
+    id: UUID
+    creatorId: UUID
     stake: float
     timeControl: str
     status: str
@@ -37,6 +37,7 @@ class ChallengeBase(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 
 class AvailableChallenge(ChallengeBase):

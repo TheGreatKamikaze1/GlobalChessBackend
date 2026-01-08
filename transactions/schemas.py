@@ -16,7 +16,9 @@ class WithdrawRequest(BaseModel):
 class TransactionData(BaseModel):
     transactionId: str
     amount: Decimal
-    newBalance: Decimal
+    newBalance: Optional[Decimal] = None
+    type: Optional[str] = None
+    reference: Optional[str] = None
     status: str
     createdAt: datetime
 

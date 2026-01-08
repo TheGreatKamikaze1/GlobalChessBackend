@@ -13,6 +13,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from core.database import Base
+from decimal import Decimal
 
 
 class User(Base):
@@ -25,7 +26,8 @@ class User(Base):
     display_name = Column(String, nullable=False)
     password = Column(String, nullable=False)
 
-    balance = Column(Numeric(12, 2), default=0.00)
+    balance = Column(Numeric(12, 2), default=Decimal("0.00"))
+
     avatar_url = Column(String, nullable=True)
     games_played = Column(Integer, default=0)
     games_won = Column(Integer, default=0)
@@ -57,7 +59,6 @@ class User(Base):
         back_populates="black",
         foreign_keys="Game.black_id",
     )
-
 
 class Challenge(Base):
     __tablename__ = "challenges"
