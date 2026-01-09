@@ -1,169 +1,98 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Header
+from fastapi import APIRouter, HTTPException, Request, Header, Depends
 from sqlalchemy.orm import Session
-from decimal import Decimal
+import httpx
 
-from core.database import get_db
-from core.models import User, Transaction
-from transactions.schemas import (
-    DepositRequest,
-    WithdrawRequest,
-    TransactionResponse,
-    TransactionHistoryResponse,
+from payment_service.app.schemas.payment import PaystackPayment
+from payment_service.app.services.paystack_service import (
+    initialize_payment,
+    verify_webhook_signature,
 )
-from core.auth import get_current_user
+from payment_service.app.models.payment import Payment
+from payment_service.app.db.session import get_db
 
-router = APIRouter(tags=["Transactions"])
+router = APIRouter(prefix="/paystack", tags=["Paystack"])
 
 
-@router.post("/deposit", response_model=TransactionResponse)
-def deposit_funds(
-    payload: DepositRequest,
+@router.post("/initialize")
+async def paystack_initialize(
+    data: PaystackPayment,
     db: Session = Depends(get_db),
-    x_internal_call: str = Header(None),
-    current_user: User = Depends(get_current_user),
 ):
-    # Block manual deposits
-    if x_internal_call != "PAYSTACK":
-        raise HTTPException(
-            status_code=403,
-            detail="Deposits must be made via Paystack",
-        )
+    response = await initialize_payment(data.email, data.amount)
+    reference = response["data"]["reference"]
 
-    # Prevent duplicate references
-    if payload.reference:
-        existing = (
-            db.query(Transaction)
-            .filter_by(reference=payload.reference)
-            .first()
-        )
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail="Duplicate transaction reference",
-            )
+    existing = db.query(Payment).filter_by(reference=reference).first()
+    if existing:
+        return response
 
-    # Lock + fetch user
-    user = (
-        db.query(User)
-        .filter(User.id == current_user.id)
+    payment = Payment(
+        reference=reference,
+        email=data.email,
+        amount=data.amount / 100,
+        currency="NGN",
+        status="pending",
+        provider="paystack",
+        access_token=data.access_token,
+    )
+
+    db.add(payment)
+    db.commit()
+    return response
+
+
+
+
+@router.post("/webhook")
+async def paystack_webhook(
+    request: Request,
+    x_paystack_signature: str = Header(None),
+    db: Session = Depends(get_db),
+):
+    body = await request.body()
+    if not verify_webhook_signature(body, x_paystack_signature):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    payload = await request.json()
+    if payload.get("event") != "charge.success":
+        return {"status": "ignored"}
+
+    data = payload["data"]
+    reference = data["reference"]
+    amount = data["amount"] / 100
+
+    payment = (
+        db.query(Payment)
+        .filter_by(reference=reference)
         .with_for_update()
         .first()
     )
 
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    if not payment or payment.verified:
+        return {"status": "already processed or not found"}
 
-   
-    user.balance = (user.balance or Decimal("0.00")) + payload.amount
-
-    txn = Transaction(
-        user_id=current_user.id,
-        amount=payload.amount,
-        type="DEPOSIT",
-        reference=payload.reference,
-        status="COMPLETED",
-    )
-
-    db.add(txn)
+    payment.status = "success"
+    payment.verified = True
     db.commit()
-    db.refresh(txn)
 
-    return {
-        "success": True,
-        "data": {
-            "transactionId": str(txn.id),
-            "amount": txn.amount,
-            "type": txn.type,
-            "reference": txn.reference,
-            "newBalance": user.balance,
-            "status": txn.status,
-            "createdAt": txn.created_at,
-        },
-    }
-
-
-@router.post("/withdraw", response_model=TransactionResponse)
-def withdraw_funds(
-    payload: WithdrawRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    user = (
-        db.query(User)
-        .filter(User.id == current_user.id)
-        .with_for_update()
-        .first()
+    TRANSACTION_URL = (
+        "https://globalchessbackend-production.up.railway.app"
+        "/api/transactions/deposit"
     )
 
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            TRANSACTION_URL,
+            json={
+                "amount": amount,
+                "reference": reference,
+            },
+            headers={
+                "x-internal-call": "PAYSTACK",
+            
+                "Authorization": f"Bearer {payment.access_token}",
+            },
+            timeout=10,
+        )
 
-    if user.balance is None or user.balance < payload.amount:
-        raise HTTPException(status_code=400, detail="Insufficient funds")
+    return {"status": "payment verified and wallet credited"}
 
-    user.balance -= payload.amount
-
-    txn = Transaction(
-        user_id=current_user.id,
-        amount=payload.amount,
-        type="WITHDRAWAL",
-        status="PENDING",
-    )
-
-    db.add(txn)
-    db.commit()
-    db.refresh(txn)
-
-    return {
-        "success": True,
-        "data": {
-            "transactionId": str(txn.id),
-            "amount": payload.amount,
-            "newBalance": user.balance,
-            "status": txn.status,
-            "createdAt": txn.created_at,
-        },
-    }
-
-
-@router.get("/history", response_model=TransactionHistoryResponse)
-def transaction_history(
-    limit: int = Query(20, ge=1),
-    offset: int = Query(0, ge=0),
-    type: str = Query("ALL"),
-    db: Session = Depends(get_db),
-    current_user: int = Depends(get_current_user),
-):
-    query = db.query(Transaction).filter(Transaction.user_id == current_user.id)
-
-    if type != "ALL":
-        query = query.filter(Transaction.type == type)
-
-    total = query.count()
-
-    txns = (
-        query.order_by(Transaction.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-
-    return {
-        "success": True,
-        "data": [
-            {
-                "id": str(t.id),
-                "amount": t.amount,
-                "type": t.type,
-                "reference": t.reference,
-                "status": t.status,
-                "createdAt": t.created_at,
-            }
-            for t in txns
-        ],
-        "pagination": {
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-        },
-    }

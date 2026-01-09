@@ -104,7 +104,7 @@ def get_balance(
         "success": True,
         "data": {
             "balance": float(user.balance or 0),
-            "currency": "USD",
+            "currency": "NGN",
         },
     }
 

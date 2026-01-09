@@ -12,7 +12,7 @@ from transactions.schemas import (
 )
 from core.auth import get_current_user
 
-router = APIRouter(tags=["Transactions"])
+router = APIRouter(tags=["Transactions"]) 
 
 
 @router.post("/deposit", response_model=TransactionResponse)
@@ -21,26 +21,18 @@ def deposit_funds(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Prevent duplicate references
+
     if payload.reference:
         existing = db.query(Transaction).filter_by(reference=payload.reference).first()
         if existing:
             raise HTTPException(status_code=400, detail="Duplicate transaction reference")
 
-    # Lock + fetch user
-    user = (
-        db.query(User)
-        .filter(User.id == current_user.id)
-        .with_for_update()
-        .first()
-    )
-
+    user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Update balance
     user.balance = (user.balance or Decimal("0.00")) + payload.amount
-
+    
     txn = Transaction(
         user_id=current_user.id,    
         amount=payload.amount,
@@ -48,7 +40,6 @@ def deposit_funds(
         reference=payload.reference,
         status="COMPLETED",
     )
-
     db.add(txn)
     db.commit()
     db.refresh(txn)
@@ -152,3 +143,10 @@ def transaction_history(
             "offset": offset,
         },
     }
+
+
+
+
+
+
+
