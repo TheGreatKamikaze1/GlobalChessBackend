@@ -1,9 +1,8 @@
 from pydantic import BaseModel, EmailStr, Field
 
-
 class PaystackPayment(BaseModel):
     email: EmailStr
-    amount: int = Field(..., gt=0, description="Amount in kobo")
+    amount: int = Field(..., gt=0, description="Amount in naira")
     access_token: str
 
 
