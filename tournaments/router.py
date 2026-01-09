@@ -13,6 +13,7 @@ from tournaments.schemas import TournamentCreate, TournamentResponse, JoinTourna
 from tournaments.service import schedule_tournament
 from datetime import timedelta
 from tournaments.tasks import start_tournament_task, finish_tournament_task
+from fastapi import Query
 
 
 
@@ -201,3 +202,43 @@ def finish_tournament(
     tournament.escrow_balance = 0
     db.commit()
     return {"status": "completed"}
+
+
+
+#list
+@router.get("/list")
+def list_tournaments(
+    status: str = Query("ALL", description="Filter by status: UPCOMING, RUNNING, FINISHED, CANCELLED"),
+    db: Session = Depends(get_db)
+):
+    """
+    List tournaments with optional status filter.
+    """
+    query = db.query(Tournament)
+    
+    if status != "ALL":
+        query = query.filter(Tournament.status == status.upper())
+
+    tournaments = query.order_by(Tournament.start_time.desc()).all()
+
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": t.id,
+                "name": t.name,
+                "creator_id": t.creator_id,
+                "start_time": t.start_time,
+                "duration_minutes": float(t.duration_minutes),
+                "time_control": t.time_control,
+                "deposit_required": t.deposit_required,
+                "entry_fee": float(t.entry_fee),
+                "prize_rules": t.prize_rules,
+                "status": t.status,
+                "escrow_balance": float(t.escrow_balance),
+                "created_at": t.created_at,
+            }
+            for t in tournaments
+        ],
+        "count": len(tournaments)
+    }
