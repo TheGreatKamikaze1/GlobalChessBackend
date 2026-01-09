@@ -29,12 +29,13 @@ async def paystack_initialize(
     payment = Payment(
         reference=reference,
         email=data.email,
-        amount=data.amount / 100,
+          amount=data.amount,
         currency="NGN",
         status="pending",
         provider="paystack",
         access_token=data.access_token,
     )
+    
 
     db.add(payment)
     db.commit()
