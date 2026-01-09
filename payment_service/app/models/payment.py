@@ -12,6 +12,8 @@ import uuid
 from payment_service.app.db.base import Base
 
 
+
+
 class Payment(Base):
     __tablename__ = "payments"
 
@@ -22,11 +24,14 @@ class Payment(Base):
 
     amount = Column(Numeric(10, 2), nullable=False)
     currency = Column(String, default="NGN")
+    
+
 
     status = Column(String, nullable=False)  # pending | success | failed
     provider = Column(String, default="paystack")
 
     verified = Column(Boolean, default=False)
+    access_token = Column(String, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
