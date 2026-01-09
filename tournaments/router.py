@@ -17,7 +17,7 @@ from fastapi import Query
 
 
 
-router = APIRouter(prefix="/tournaments", tags=["Tournaments"])
+router = APIRouter( tags=["Tournaments"])
 
 #create
 @router.post("/", response_model=TournamentResponse)
