@@ -1,87 +1,169 @@
-from fastapi import APIRouter, HTTPException, Request, Header, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from sqlalchemy.orm import Session
-import httpx
+from decimal import Decimal
 
-from payment_service.app.schemas.payment import PaystackPayment
-from payment_service.app.services.paystack_service import (
-    initialize_payment,
-    verify_webhook_signature,
+from core.database import get_db
+from core.models import User, Transaction
+from transactions.schemas import (
+    DepositRequest,
+    WithdrawRequest,
+    TransactionResponse,
+    TransactionHistoryResponse,
 )
-from payment_service.app.models.payment import Payment
-from payment_service.app.db.session import get_db
-from payment_service.app.core.config import settings
+from core.auth import get_current_user
+
+router = APIRouter(tags=["Transactions"])
 
 
-router = APIRouter( tags=["Paystack"])
-
-
-@router.post("/webhook")
-async def paystack_webhook(
-    request: Request,
-    x_paystack_signature: str = Header(None),
+@router.post("/deposit", response_model=TransactionResponse)
+def deposit_funds(
+    payload: DepositRequest,
     db: Session = Depends(get_db),
+    x_internal_call: str = Header(None),
+    current_user: User = Depends(get_current_user),
 ):
-    body = await request.body()
+    # Block manual deposits
+    if x_internal_call != "PAYSTACK":
+        raise HTTPException(
+            status_code=403,
+            detail="Deposits must be made via Paystack",
+        )
 
-    if not verify_webhook_signature(body, x_paystack_signature):
-        raise HTTPException(status_code=400, detail="Invalid signature")
+    # Prevent duplicate references
+    if payload.reference:
+        existing = (
+            db.query(Transaction)
+            .filter_by(reference=payload.reference)
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail="Duplicate transaction reference",
+            )
 
-    event = await request.json()
-
-    if event.get("event") != "charge.success":
-        return {"status": "ignored"}
-
-    data = event["data"]
-
-    reference = data["reference"]
-    amount = data["amount"] / 100  
-    currency = data["currency"]
-
-    if currency != "NGN":
-        raise HTTPException(status_code=400, detail="Invalid currency")
-
-
-    payment = (
-        db.query(Payment)
-        .filter(Payment.reference == reference)
+    # Lock + fetch user
+    user = (
+        db.query(User)
+        .filter(User.id == current_user.id)
         .with_for_update()
         .first()
     )
 
-    if not payment:
-        raise HTTPException(status_code=404, detail="Payment not found")
-
-    if payment.verified:
-        return {"status": "already processed"}
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
    
-    if float(payment.amount) != float(amount):
-        raise HTTPException(status_code=400, detail="Amount mismatch")
+    user.balance = (user.balance or Decimal("0.00")) + payload.amount
 
-   
-    payment.status = "success"
-    payment.verified = True
+    txn = Transaction(
+        user_id=current_user.id,
+        amount=payload.amount,
+        type="DEPOSIT",
+        reference=payload.reference,
+        status="COMPLETED",
+    )
+
+    db.add(txn)
     db.commit()
+    db.refresh(txn)
 
-    # CREDIT USER WALLET
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"{settings.TRANSACTIONS_BASE_URL}/transactions/deposit",
-            headers={
-                "Authorization": f"Bearer {payment.user_token}",
-                "X-Internal-Call": "PAYSTACK",
-            },
-            json={
-                "amount": amount,
-                "reference": reference,
-            },
-            timeout=10,
-        )
+    return {
+        "success": True,
+        "data": {
+            "transactionId": str(txn.id),
+            "amount": txn.amount,
+            "type": txn.type,
+            "reference": txn.reference,
+            "newBalance": user.balance,
+            "status": txn.status,
+            "createdAt": txn.created_at,
+        },
+    }
 
-        if resp.status_code != 200:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to credit user wallet",
-            )
 
-    return {"status": "payment verified & wallet credited"}
+@router.post("/withdraw", response_model=TransactionResponse)
+def withdraw_funds(
+    payload: WithdrawRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    user = (
+        db.query(User)
+        .filter(User.id == current_user.id)
+        .with_for_update()
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.balance is None or user.balance < payload.amount:
+        raise HTTPException(status_code=400, detail="Insufficient funds")
+
+    user.balance -= payload.amount
+
+    txn = Transaction(
+        user_id=current_user.id,
+        amount=payload.amount,
+        type="WITHDRAWAL",
+        status="PENDING",
+    )
+
+    db.add(txn)
+    db.commit()
+    db.refresh(txn)
+
+    return {
+        "success": True,
+        "data": {
+            "transactionId": str(txn.id),
+            "amount": payload.amount,
+            "newBalance": user.balance,
+            "status": txn.status,
+            "createdAt": txn.created_at,
+        },
+    }
+
+
+@router.get("/history", response_model=TransactionHistoryResponse)
+def transaction_history(
+    limit: int = Query(20, ge=1),
+    offset: int = Query(0, ge=0),
+    type: str = Query("ALL"),
+    db: Session = Depends(get_db),
+    current_user: int = Depends(get_current_user),
+):
+    query = db.query(Transaction).filter(Transaction.user_id == current_user.id)
+
+    if type != "ALL":
+        query = query.filter(Transaction.type == type)
+
+    total = query.count()
+
+    txns = (
+        query.order_by(Transaction.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": str(t.id),
+                "amount": t.amount,
+                "type": t.type,
+                "reference": t.reference,
+                "status": t.status,
+                "createdAt": t.created_at,
+            }
+            for t in txns
+        ],
+        "pagination": {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        },
+    }
