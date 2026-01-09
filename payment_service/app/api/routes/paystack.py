@@ -9,6 +9,7 @@ from payment_service.app.services.paystack_service import (
 )
 from payment_service.app.models.payment import Payment
 from payment_service.app.db.session import get_db
+from payment_service.app.services.paystack_service import verify_payment
 
 router = APIRouter(prefix="/paystack", tags=["Paystack"])
 
@@ -95,4 +96,50 @@ async def paystack_webhook(
         )
 
     return {"status": "payment verified and wallet credited"}
+
+
+@router.get("/verify/{reference}")
+async def verify_paystack_payment(
+    reference: str,
+    db: Session = Depends(get_db),
+):
+   
+    response = await verify_payment(reference)
+
+    if response["data"]["status"] != "success":
+        raise HTTPException(
+            status_code=400,
+            detail="Payment not successful"
+        )
+
+    payment = (
+        db.query(Payment)
+        .filter_by(reference=reference)
+        .first()
+    )
+
+    if not payment:
+        raise HTTPException(
+            status_code=404,
+            detail="Payment record not found"
+        )
+
+    
+    if payment.verified:
+        return {
+            "status": "already verified",
+            "reference": reference,
+        }
+
+   
+    payment.status = "success"
+    payment.verified = True
+    db.commit()
+
+    return {
+        "status": "verified",
+        "reference": reference,
+        "amount": float(payment.amount),
+        "currency": payment.currency,
+    }
 
