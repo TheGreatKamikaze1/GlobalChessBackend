@@ -54,16 +54,16 @@ def create_tournament(
     db.add(tournament)
     db.commit()
    
-    start_tournament_task.apply_async(
-    args=[tournament.id],
-    eta=payload.start_time
-)
+#     start_tournament_task.apply_async(
+#     args=[tournament.id],
+#     eta=payload.start_time
+# )
 
-    end_time = payload.start_time + timedelta(minutes=payload.duration_minutes)
-    finish_tournament_task.apply_async(
-    args=[tournament.id, []],
-    eta=end_time
-)
+#     end_time = payload.start_time + timedelta(minutes=payload.duration_minutes)
+#     finish_tournament_task.apply_async(
+#     args=[tournament.id, []],
+#     eta=end_time
+# )
     schedule_tournament(
     tournament_id=tournament.id,
     start_time=payload.start_time,
@@ -73,6 +73,9 @@ def create_tournament(
     db.refresh(tournament)
 
     return tournament
+
+
+
 
 
 #join

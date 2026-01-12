@@ -17,16 +17,19 @@ class TournamentCreate(BaseModel):
     time_control: str
     start_time: datetime
     duration_minutes: int
+    
 
 
 class TournamentResponse(BaseModel):
     id: str
     name: str
+    description: Optional[str] = None
     status: str
     entry_fee: float
     start_time: datetime
     duration_minutes: int
     deposit_required: bool
+
 
 
 class JoinTournamentResponse(BaseModel):
