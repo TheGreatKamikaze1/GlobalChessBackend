@@ -242,3 +242,15 @@ def list_tournaments(
         ],
         "count": len(tournaments)
     }
+
+@router.get("/{tournament_id}", response_model=TournamentResponse)
+def get_tournament_by_id(
+    tournament_id: str,
+    db: Session = Depends(get_db),
+):
+    tournament = db.query(Tournament).filter_by(id=tournament_id).first()
+
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Tournament not found")
+
+    return tournament
