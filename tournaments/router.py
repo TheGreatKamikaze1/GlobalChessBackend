@@ -257,3 +257,36 @@ def get_tournament_by_id(
         raise HTTPException(status_code=404, detail="Tournament not found")
 
     return tournament
+
+# get all participants in a tournament
+@router.get("/{tournament_id}/participants")
+def get_tournament_participants(
+    tournament_id: str,
+    db: Session = Depends(get_db),
+):
+    tournament = db.query(Tournament).filter_by(id=tournament_id).first()
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Tournament not found")
+
+    participants = (
+        db.query(TournamentParticipant, User)
+        .join(User, User.id == TournamentParticipant.user_id)
+        .filter(TournamentParticipant.tournament_id == tournament_id)
+        .all()
+    )
+
+    return {
+        "success": True,
+        "tournament_id": tournament_id,
+        "count": len(participants),
+        "participants": [
+            {
+                "user_id": user.id,
+                "username": user.username,
+                "joined_at": p.joined_at,
+                "score": p.score,
+                "paid": p.paid,
+            }
+            for p, user in participants
+        ],
+    }
