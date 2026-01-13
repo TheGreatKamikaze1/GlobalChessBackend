@@ -3,14 +3,24 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from core.models import User
-from users.users_schema import UpdateProfileSchema
+from users.users_schema import (
+    UpdateProfileSchema,
+    ProfileResponse,
+    MeResponse,
+    UpdateProfileResponse,
+    BalanceResponse,
+    AuthStatusResponse,
+)
+
 from core.auth import get_current_user_id
+
+
 
 router = APIRouter( tags=["Users"])
 
 
 
-@router.get("/me")
+@router.get("/me", response_model=MeResponse)
 def get_current_user(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
@@ -36,7 +46,7 @@ def get_current_user(
     }
 
 
-@router.get("/profile")
+@router.get("/profile", response_model=ProfileResponse)
 def get_profile(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
@@ -59,7 +69,7 @@ def get_profile(
 
 
 
-@router.put("/profile")
+@router.put("/profile", response_model=UpdateProfileResponse)
 def update_profile(
     data: UpdateProfileSchema,
     user_id: str = Depends(get_current_user_id),
@@ -90,7 +100,7 @@ def update_profile(
     }
 
 
-@router.get("/balance")
+@router.get("/balance", response_model=BalanceResponse)
 def get_balance(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
@@ -108,7 +118,7 @@ def get_balance(
         },
     }
 
-@router.get("/auth-status")
+@router.get("/auth-status", response_model=AuthStatusResponse)
 def auth_status(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
