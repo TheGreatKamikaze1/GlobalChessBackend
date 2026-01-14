@@ -9,3 +9,6 @@ class RegisterSchema(BaseModel):
 
     name: Optional[str] = None
     bio: Optional[str] = None
+class LoginSchema(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6)
