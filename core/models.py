@@ -16,6 +16,7 @@ from core.database import Base
 from decimal import Decimal
 
 
+
 class User(Base):
     __tablename__ = "users"
 
@@ -25,7 +26,8 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     display_name = Column(String, nullable=False)
     password = Column(String, nullable=False)
-
+    name = Column(String(100), nullable=True)
+    bio = Column(Text, nullable=True)
     balance = Column(Numeric(12, 2), default=Decimal("0.00"))
 
     avatar_url = Column(String, nullable=True)

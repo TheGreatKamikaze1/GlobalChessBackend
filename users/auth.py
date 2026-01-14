@@ -27,11 +27,14 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
     hashed_pw = pwd_context.hash(normalize_password(req.password))
 
     new_user = User(
-        email=req.email,
-        username=req.username,
-        display_name=req.displayName,
-        password=hashed_pw,
-    )
+    email=req.email,
+    username=req.username,
+    display_name=req.displayName,
+    name=req.name,
+    bio=req.bio,
+    password=hashed_pw,
+)
+
 
     db.add(new_user)
     db.commit()

@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
+from typing import Optional
 
 class RegisterSchema(BaseModel):
     email: EmailStr
@@ -6,6 +7,5 @@ class RegisterSchema(BaseModel):
     displayName: str = Field(min_length=2)
     password: str = Field(min_length=6)
 
-class LoginSchema(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=6)
+    name: Optional[str] = None
+    bio: Optional[str] = None
