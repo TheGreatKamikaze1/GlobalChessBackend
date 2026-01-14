@@ -3,7 +3,12 @@ from typing import Optional
 from datetime import datetime
 
 
+
 class UpdateProfileSchema(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    username: Optional[str] = None
+    bio: Optional[str] = None
     displayName: Optional[str] = None
     avatarUrl: Optional[str] = None
 
@@ -25,6 +30,8 @@ class MeData(BaseModel):
     id: str
     email: EmailStr
     username: str
+    name: Optional[str] = None
+    bio: Optional[str] = None
     displayName: Optional[str] = None
     avatarUrl: Optional[str] = None
     balance: float
@@ -40,6 +47,8 @@ class MeResponse(BaseModel):
 
 class UpdateProfileData(BaseModel):
     id: str
+    name: Optional[str] = None
+    bio: Optional[str] = None
     displayName: Optional[str] = None
     avatarUrl: Optional[str] = None
     updatedAt: Optional[datetime] = None
