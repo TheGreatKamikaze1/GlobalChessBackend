@@ -16,9 +16,13 @@ class UpdateProfileSchema(BaseModel):
 class ProfileData(BaseModel):
     id: str
     email: EmailStr
+    username: str
+    name: Optional[str] = None
+    bio: Optional[str] = None
     displayName: Optional[str] = None
     balance: float
     rating: int
+
 
 
 class ProfileResponse(BaseModel):

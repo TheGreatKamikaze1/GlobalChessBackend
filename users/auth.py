@@ -33,6 +33,7 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
     name=req.name,
     bio=req.bio,
     password=hashed_pw,
+    
 )
 
 

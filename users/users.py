@@ -87,13 +87,13 @@ def update_profile(
         raise HTTPException(status_code=404, detail="User not found")
 
     if data.name is not None:
-        user.name = data.name   # only if you have `name` column
+        user.name = data.name   
     if data.email is not None:
         user.email = data.email
     if data.username is not None:
         user.username = data.username
     if data.bio is not None:
-        user.bio = data.bio     # only if you have `bio` column
+        user.bio = data.bio     
     if data.displayName is not None:
         user.display_name = data.displayName
     if data.avatarUrl is not None:
@@ -106,11 +106,14 @@ def update_profile(
         "success": True,
         "data": {
             "id": user.id,
+            "name": user.name,
+            "bio": user.bio,
             "displayName": user.display_name,
             "avatarUrl": user.avatar_url,
             "updatedAt": user.updated_at,
         },
     }
+
 
 
 
