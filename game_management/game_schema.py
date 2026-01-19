@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Literal
 
 
 class PlayerDetails(BaseModel):
@@ -10,12 +10,13 @@ class PlayerDetails(BaseModel):
 
 
 class MoveRequest(BaseModel):
-    move: str = Field(..., description="Move in UCI format (e.g., 'e2e4' or 'e7e8q')")
-
-
-class PaginationParams(BaseModel):
-    limit: int = Field(10, le=100)
-    offset: int = Field(0, ge=0)
+    move: str = Field(
+        ...,
+        description=(
+            "Move in UCI (e.g. 'e2e4', 'e7e8q') OR SAN (e.g. 'e4', 'Nf3', 'O-O'). "
+            "Backend auto-detects."
+        ),
+    )
 
 
 class GameResponse(BaseModel):
@@ -24,26 +25,30 @@ class GameResponse(BaseModel):
     black: PlayerDetails
     stake: float
     status: str
-    moves: List[str]
+    moves: List[str]              
     currentFen: str
     startedAt: datetime
+    currentTurn: Literal["white", "black"]
     result: Optional[str] = None
     completedAt: Optional[datetime] = None
 
 
 class MoveResponse(BaseModel):
     gameId: str
-    move: str
+    uci: str
+    san: str
     currentFen: str
     isCheck: bool
     isCheckmate: bool
     isGameOver: bool
+    result: Optional[str] = None
+    winnerId: Optional[int] = None
 
 
 class ResignResponse(BaseModel):
     gameId: str
     result: str
-    winnerId: str
+    winnerId: int
     message: str
 
 
@@ -68,7 +73,7 @@ class ActiveGameItem(BaseModel):
     stake: float
     status: str
     startedAt: datetime
-    currentTurn: str  # 'white' or 'black'
+    currentTurn: Literal["white", "black"]
 
 
 class ActiveGamesResponse(BaseModel):
