@@ -143,10 +143,3 @@ def transaction_history(
             "offset": offset,
         },
     }
-
-
-
-
-
-
-

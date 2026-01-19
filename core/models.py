@@ -1,20 +1,11 @@
 from datetime import datetime
 import uuid
-from sqlalchemy import (
-    Column,
-    String,
-    Numeric,
-    DateTime,
-    ForeignKey,
-    Text,
-    Integer,
-)
+from decimal import Decimal
+from sqlalchemy import Column, String, Numeric, DateTime, ForeignKey, Text, Integer, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from core.database import Base
-from decimal import Decimal
-
 
 
 class User(Base):
@@ -26,17 +17,19 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     display_name = Column(String, nullable=False)
     password = Column(String, nullable=False)
+
     name = Column(String(100), nullable=True)
     bio = Column(Text, nullable=True)
-    balance = Column(Numeric(12, 2), default=Decimal("0.00"))
+
+    balance = Column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
 
     avatar_url = Column(String, nullable=True)
-    games_played = Column(Integer, default=0)
-    games_won = Column(Integer, default=0)
-    current_rating = Column(Integer, default=1200)
+    games_played = Column(Integer, default=0, nullable=False)
+    games_won = Column(Integer, default=0, nullable=False)
+    current_rating = Column(Integer, default=1200, nullable=False)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     created_challenges = relationship(
         "Challenge",
@@ -62,39 +55,33 @@ class User(Base):
         foreign_keys="Game.black_id",
     )
 
+    transactions = relationship("Transaction", back_populates="user")
+
+
 class Challenge(Base):
     __tablename__ = "challenges"
 
     id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
-    creator_id = Column(String(36), ForeignKey("users.id"), nullable=False)
-    acceptor_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    creator_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    acceptor_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
 
     stake = Column(Numeric(12, 2), nullable=False)
     time_control = Column(String, default="60/0")
 
-    status = Column(String, default="OPEN")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    expires_at = Column(DateTime(timezone=True), nullable=False)
+    status = Column(String, default="OPEN", index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
 
-    color_preference = Column(String, default="auto")  # values: "white", "black", "auto"
+    color_preference = Column(String, default="auto")
 
-    creator = relationship(
-        "User",
-        back_populates="created_challenges",
-        foreign_keys=[creator_id],
-    )
+    creator = relationship("User", back_populates="created_challenges", foreign_keys=[creator_id])
+    acceptor = relationship("User", back_populates="accepted_challenges", foreign_keys=[acceptor_id])
 
-    acceptor = relationship(
-        "User",
-        back_populates="accepted_challenges",
-        foreign_keys=[acceptor_id],
-    )
+    game = relationship("Game", back_populates="challenge", uselist=False)
 
-    game = relationship(
-        "Game",
-        back_populates="challenge",
-        uselist=False,
+    __table_args__ = (
+        Index("ix_challenges_open_unexpired", "status", "expires_at"),
     )
 
 
@@ -103,21 +90,16 @@ class Game(Base):
 
     id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
-    challenge_id = Column(
-        String(36),
-        ForeignKey("challenges.id"),
-        unique=True,
-        nullable=True,
-    )
+    challenge_id = Column(String(36), ForeignKey("challenges.id"), unique=True, nullable=True, index=True)
 
-    white_id = Column(String(36), ForeignKey("users.id"), nullable=False)
-    black_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    white_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    black_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
 
     stake = Column(Numeric(12, 2), nullable=False)
 
-    status = Column(String, default="ONGOING")
+    status = Column(String, default="ONGOING", index=True)
     result = Column(String, nullable=True)
-    winner_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    winner_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
 
     moves = Column(Text, default="[]", nullable=False)
     current_fen = Column(
@@ -126,25 +108,13 @@ class Game(Base):
         nullable=False,
     )
 
-    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
-    white = relationship(
-        "User",
-        foreign_keys=[white_id],
-        back_populates="games_as_white",
-    )
+    white = relationship("User", foreign_keys=[white_id], back_populates="games_as_white")
+    black = relationship("User", foreign_keys=[black_id], back_populates="games_as_black")
 
-    black = relationship(
-        "User",
-        foreign_keys=[black_id],
-        back_populates="games_as_black",
-    )
-
-    challenge = relationship(
-        "Challenge",
-        back_populates="game",
-    )
+    challenge = relationship("Challenge", back_populates="game")
 
 
 class Transaction(Base):
@@ -152,11 +122,13 @@ class Transaction(Base):
 
     id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     amount = Column(Numeric(12, 2), nullable=False)
 
-    type = Column(String, nullable=False)
+    type = Column(String, nullable=False, index=True)
     reference = Column(String, unique=True, nullable=True)
-    status = Column(String, default="PENDING")
+    status = Column(String, default="PENDING", index=True)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="transactions")

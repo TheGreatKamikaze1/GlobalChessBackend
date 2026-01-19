@@ -1,16 +1,15 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
 
 
-
 class UpdateProfileSchema(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=100)
     email: Optional[EmailStr] = None
-    username: Optional[str] = None
-    bio: Optional[str] = None
-    displayName: Optional[str] = None
-    avatarUrl: Optional[str] = None
+    username: Optional[str] = Field(default=None, min_length=3, max_length=30)
+    bio: Optional[str] = Field(default=None, max_length=500)
+    displayName: Optional[str] = Field(default=None, min_length=2, max_length=50)
+    avatarUrl: Optional[str] = Field(default=None, max_length=500)
 
 
 class ProfileData(BaseModel):
@@ -22,7 +21,6 @@ class ProfileData(BaseModel):
     displayName: Optional[str] = None
     balance: float
     rating: int
-
 
 
 class ProfileResponse(BaseModel):
