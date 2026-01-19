@@ -1,32 +1,73 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from decimal import Decimal
-from typing import List
+from datetime import datetime, timedelta, timezone
+import random
 
 from core.database import get_db
 from core.models import User, Transaction
 from core.auth import get_current_user
 
 from tournaments.models import Tournament, TournamentParticipant, TournamentMatch
-from tournaments.schemas import TournamentCreate, TournamentResponse, JoinTournamentResponse, FinishTournamentPayload, TournamentDetailsResponse
+from tournaments.schemas import (
+    TournamentCreate,
+    TournamentResponse,
+    JoinTournamentResponse,
+    FinishTournamentPayload,
+    TournamentDetailsResponse,
+)
 
 from tournaments.service import schedule_tournament
-from datetime import timedelta
-from tournaments.tasks import start_tournament_task, finish_tournament_task
-from fastapi import Query
-import random
-from sqlalchemy import or_
+
+router = APIRouter(tags=["Tournaments"])
+
+
+def _maybe_update_status(db: Session, tournament: Tournament) -> Tournament:
+    """
+    Ensures tournament.status matches time:
+    UPCOMING -> RUNNING at start_time
+    RUNNING/UPCOMING -> FINISHED at end_time
+    CANCELLED stays CANCELLED
+    FINISHED stays FINISHED
+    """
+    if not tournament:
+        return tournament
+
+    if tournament.status in ("CANCELLED", "FINISHED"):
+        return tournament
+
+    now = datetime.now(timezone.utc)
+
+   #guard it
+    start_time = tournament.start_time
+    if start_time is not None and start_time.tzinfo is None:
+        start_time = start_time.replace(tzinfo=timezone.utc)
+
+    end_time = None
+    if start_time is not None:
+        end_time = start_time + timedelta(minutes=int(tournament.duration_minutes or 0))
+
+    changed = False
+
+    if start_time and now >= start_time and tournament.status == "UPCOMING":
+        tournament.status = "RUNNING"
+        changed = True
+
+    if end_time and now >= end_time and tournament.status in ("UPCOMING", "RUNNING"):
+        tournament.status = "FINISHED"
+        tournament.escrow_balance = Decimal("0.00")
+        changed = True
+
+    if changed:
+        db.commit()
+        db.refresh(tournament)
+
+    return tournament
 
 
 
+# Create tournament
 
-
-
-
-
-router = APIRouter( tags=["Tournaments"])
-
-#create
 @router.post("/", response_model=TournamentResponse)
 def create_tournament(
     payload: TournamentCreate,
@@ -46,50 +87,40 @@ def create_tournament(
         max_players=payload.max_players,
         format=payload.format,
         rounds=payload.rounds,
-
         time_control=payload.time_control,
         start_time=payload.start_time,
         duration_minutes=payload.duration_minutes,
-        escrow_balance=Decimal(payload.entry_fee if payload.deposit_required else 0)
+        escrow_balance=Decimal(payload.entry_fee if payload.deposit_required else 0),
     )
 
     if payload.deposit_required:
         current_user.balance -= Decimal(payload.entry_fee)
-        db.add(Transaction(
-            user_id=current_user.id,
-            amount=payload.entry_fee,
-            type="TOURNAMENT_CREATE",
-            status="COMPLETED",
-        ))
+        db.add(
+            Transaction(
+                user_id=current_user.id,
+                amount=payload.entry_fee,
+                type="TOURNAMENT_CREATE",
+                status="COMPLETED",
+            )
+        )
 
     db.add(tournament)
     db.commit()
-   
-#     start_tournament_task.apply_async(
-#     args=[tournament.id],
-#     eta=payload.start_time
-# )
-
-#     end_time = payload.start_time + timedelta(minutes=payload.duration_minutes)
-#     finish_tournament_task.apply_async(
-#     args=[tournament.id, []],
-#     eta=end_time
-# )
-    schedule_tournament(
-    tournament_id=tournament.id,
-    start_time=payload.start_time,
-    duration_minutes=payload.duration_minutes,
-    results=[]  
-) 
     db.refresh(tournament)
+
+    # Schedule start/finish (best effort)
+    schedule_tournament(
+        tournament_id=tournament.id,
+        start_time=payload.start_time,
+        duration_minutes=payload.duration_minutes,
+    )
 
     return tournament
 
 
 
+# Join tournament
 
-
-#join
 @router.post("/{tournament_id}/join", response_model=JoinTournamentResponse)
 def join_tournament(
     tournament_id: str,
@@ -99,12 +130,26 @@ def join_tournament(
     tournament = db.query(Tournament).filter_by(id=tournament_id).first()
     if not tournament:
         raise HTTPException(404, "Tournament not found")
+
+    tournament = _maybe_update_status(db, tournament)
+
     if tournament.status != "UPCOMING":
         raise HTTPException(400, "Tournament already started")
 
-    participant = db.query(TournamentParticipant)\
-        .filter_by(tournament_id=tournament.id, user_id=current_user.id)\
+    # max players check
+    current_count = (
+        db.query(TournamentParticipant)
+        .filter_by(tournament_id=tournament.id)
+        .count()
+    )
+    if current_count >= int(tournament.max_players or 0):
+        raise HTTPException(400, "Tournament is full")
+
+    participant = (
+        db.query(TournamentParticipant)
+        .filter_by(tournament_id=tournament.id, user_id=current_user.id)
         .first()
+    )
     if participant:
         raise HTTPException(400, "Already joined")
 
@@ -115,28 +160,27 @@ def join_tournament(
         current_user.balance -= Decimal(tournament.entry_fee)
         tournament.escrow_balance += Decimal(tournament.entry_fee)
         paid = True
-        db.add(Transaction(
-            user_id=current_user.id,
-            amount=tournament.entry_fee,
-            type="TOURNAMENT_JOIN",
-            status="COMPLETED",
-        ))
+        db.add(
+            Transaction(
+                user_id=current_user.id,
+                amount=tournament.entry_fee,
+                type="TOURNAMENT_JOIN",
+                status="COMPLETED",
+            )
+        )
 
     participant = TournamentParticipant(
-        tournament_id=tournament.id,
-        user_id=current_user.id,
-        paid=paid
+        tournament_id=tournament.id, user_id=current_user.id, paid=paid
     )
 
     db.add(participant)
     db.commit()
-    return JoinTournamentResponse(
-        tournament_id=tournament.id,
-        user_id=current_user.id,
-        paid=paid
-    )
+    return JoinTournamentResponse(tournament_id=tournament.id, user_id=current_user.id, paid=paid)
 
-#cancel
+
+
+# Cancel tournament
+
 @router.post("/{tournament_id}/cancel")
 def cancel_tournament(
     tournament_id: str,
@@ -146,40 +190,53 @@ def cancel_tournament(
     tournament = db.query(Tournament).filter_by(id=tournament_id).first()
     if not tournament or tournament.creator_id != current_user.id:
         raise HTTPException(403)
+
+    tournament = _maybe_update_status(db, tournament)
+
     if tournament.status != "UPCOMING":
         raise HTTPException(400, "Cannot cancel running tournament")
 
-    participants = db.query(TournamentParticipant)\
-        .filter_by(tournament_id=tournament.id).all()
+    participants = (
+        db.query(TournamentParticipant).filter_by(tournament_id=tournament.id).all()
+    )
 
     refund_amount = tournament.entry_fee
     for p in participants:
         user = db.query(User).filter_by(id=p.user_id).first()
-        if p.paid:
+        if p.paid and user:
             user.balance += Decimal(refund_amount)
-            db.add(Transaction(
-                user_id=user.id,
-                amount=refund_amount,
-                type="TOURNAMENT_REFUND",
-                status="COMPLETED"
-            ))
+            db.add(
+                Transaction(
+                    user_id=user.id,
+                    amount=refund_amount,
+                    type="TOURNAMENT_REFUND",
+                    status="COMPLETED",
+                )
+            )
 
+    # refund creator (create deposit)
     if tournament.deposit_required and tournament.entry_fee > 0:
         creator = db.query(User).filter_by(id=tournament.creator_id).first()
-        creator.balance += Decimal(tournament.entry_fee)
-        db.add(Transaction(
-            user_id=creator.id,
-            amount=tournament.entry_fee,
-            type="TOURNAMENT_REFUND",
-            status="COMPLETED"
-        ))
+        if creator:
+            creator.balance += Decimal(tournament.entry_fee)
+            db.add(
+                Transaction(
+                    user_id=creator.id,
+                    amount=tournament.entry_fee,
+                    type="TOURNAMENT_REFUND",
+                    status="COMPLETED",
+                )
+            )
 
     tournament.status = "CANCELLED"
-    tournament.escrow_balance = 0
+    tournament.escrow_balance = Decimal("0.00")
     db.commit()
     return {"status": "cancelled"}
 
-#finish
+
+
+# Manual finish 
+
 @router.post("/{tournament_id}/finish")
 def finish_tournament(
     tournament_id: str,
@@ -191,49 +248,55 @@ def finish_tournament(
     if not tournament or tournament.creator_id != current_user.id:
         raise HTTPException(403)
 
-    if tournament.status != "RUNNING" and tournament.status != "UPCOMING":
+    tournament = _maybe_update_status(db, tournament)
+
+    if tournament.status not in ("RUNNING", "UPCOMING"):
         raise HTTPException(400, "Tournament not running")
 
     rules = tournament.prize_rules
-    total = Decimal(tournament.escrow_balance)
+    total = Decimal(str(tournament.escrow_balance or 0))
 
     for idx, place in enumerate(rules["places"]):
-        user_id = payload.results[place-1]
-        share = Decimal(rules["distribution"][idx])
-        amount = total * share
+        user_id = payload.results[place - 1]
+        share = Decimal(str(rules["distribution"][idx]))
+        amount = (total * share).quantize(Decimal("0.01"))
 
         user = db.query(User).filter_by(id=user_id).first()
         if user:
             user.balance += amount
-            db.add(Transaction(
-                user_id=user_id,
-                amount=amount,
-                type="TOURNAMENT_WIN",
-                status="COMPLETED"
-            ))
+            db.add(
+                Transaction(
+                    user_id=user_id,
+                    amount=amount,
+                    type="TOURNAMENT_WIN",
+                    status="COMPLETED",
+                )
+            )
 
     tournament.status = "FINISHED"
-    tournament.escrow_balance = 0
+    tournament.escrow_balance = Decimal("0.00")
     db.commit()
     return {"status": "completed"}
 
 
 
-#list
+# List tournaments
+
 @router.get("/list")
 def list_tournaments(
     status: str = Query("ALL", description="Filter by status: UPCOMING, RUNNING, FINISHED, CANCELLED"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    List tournaments with optional status filter.
-    """
     query = db.query(Tournament)
-    
+
     if status != "ALL":
         query = query.filter(Tournament.status == status.upper())
 
     tournaments = query.order_by(Tournament.start_time.desc()).all()
+
+    #  status refresh
+    for t in tournaments:
+        _maybe_update_status(db, t)
 
     return {
         "success": True,
@@ -248,14 +311,20 @@ def list_tournaments(
                 "deposit_required": t.deposit_required,
                 "entry_fee": float(t.entry_fee),
                 "prize_rules": t.prize_rules,
-                "status": t.status,
+                "status": (t.status or "").lower(),
                 "escrow_balance": float(t.escrow_balance),
                 "created_at": t.created_at,
+                "max_players": int(t.max_players or 0),
+                "format": t.format,
+                "rounds": int(t.rounds or 0),
             }
             for t in tournaments
         ],
-        "count": len(tournaments)
+        "count": len(tournaments),
     }
+
+
+# Get tournament by id
 
 @router.get("/{tournament_id}", response_model=TournamentDetailsResponse)
 def get_tournament_by_id(
@@ -266,6 +335,8 @@ def get_tournament_by_id(
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
+    tournament = _maybe_update_status(db, tournament)
+
     participants_rows = (
         db.query(TournamentParticipant, User)
         .join(User, User.id == TournamentParticipant.user_id)
@@ -275,13 +346,15 @@ def get_tournament_by_id(
 
     players_count = len(participants_rows)
 
-    # matches
-    matches_rows = db.query(TournamentMatch).filter_by(tournament_id=tournament_id).order_by(TournamentMatch.round.asc()).all()
+    matches_rows = (
+        db.query(TournamentMatch)
+        .filter_by(tournament_id=tournament_id)
+        .order_by(TournamentMatch.round.asc())
+        .all()
+    )
 
-    # Build wins/losses from match results
     wins = {user.id: 0 for _, user in participants_rows}
     losses = {user.id: 0 for _, user in participants_rows}
-
     user_map = {user.id: user.username for _, user in participants_rows}
 
     for m in matches_rows:
@@ -293,9 +366,7 @@ def get_tournament_by_id(
         elif m.result == "0-1":
             wins[m.black_id] = wins.get(m.black_id, 0) + 1
             losses[m.white_id] = losses.get(m.white_id, 0) + 1
-        # draw ignored for wins/losses
 
-    # prize pool + prizes
     prize_pool = float(tournament.escrow_balance or 0)
     prizes = []
     rules = tournament.prize_rules or {}
@@ -303,9 +374,12 @@ def get_tournament_by_id(
     dist = rules.get("distribution", [])
 
     def _place_label(n: int) -> str:
-        if n == 1: return "1st"
-        if n == 2: return "2nd"
-        if n == 3: return "3rd"
+        if n == 1:
+            return "1st"
+        if n == 2:
+            return "2nd"
+        if n == 3:
+            return "3rd"
         return f"{n}th"
 
     for idx, place in enumerate(places):
@@ -316,27 +390,31 @@ def get_tournament_by_id(
 
     participants_out = []
     for p, user in participants_rows:
-        participants_out.append({
-            "id": user.id,
-            "username": user.username,
-            "wins": wins.get(user.id, 0),
-            "losses": losses.get(user.id, 0),
-            "score": float(p.score or 0),
-            "paid": bool(p.paid),
-        })
+        participants_out.append(
+            {
+                "id": user.id,
+                "username": user.username,
+                "wins": wins.get(user.id, 0),
+                "losses": losses.get(user.id, 0),
+                "score": float(p.score or 0),
+                "paid": bool(p.paid),
+            }
+        )
 
     matches_out = []
     for m in matches_rows:
-        matches_out.append({
-            "id": m.id,
-            "round": m.round,
-            "white_id": m.white_id,
-            "black_id": m.black_id,
-            "white": user_map.get(m.white_id, m.white_id),
-            "black": user_map.get(m.black_id, m.black_id),
-            "status": m.status,
-            "result": m.result,
-        })
+        matches_out.append(
+            {
+                "id": m.id,
+                "round": m.round,
+                "white_id": m.white_id,
+                "black_id": m.black_id,
+                "white": user_map.get(m.white_id, m.white_id),
+                "black": user_map.get(m.black_id, m.black_id),
+                "status": m.status,
+                "result": m.result,
+            }
+        )
 
     return {
         "id": tournament.id,
@@ -344,19 +422,15 @@ def get_tournament_by_id(
         "name": tournament.name,
         "description": tournament.description,
         "status": (tournament.status or "").lower(),
-
         "players": players_count,
         "max_players": int(tournament.max_players),
-
         "prizePool": prize_pool,
         "entryFee": float(tournament.entry_fee or 0),
-
         "startDate": tournament.start_time,
         "timeControl": tournament.time_control,
         "format": tournament.format,
         "rounds": int(tournament.rounds),
         "duration_minutes": int(tournament.duration_minutes),
-
         "prize_rules": tournament.prize_rules,
         "prizes": prizes,
         "participants": participants_out,
@@ -364,7 +438,9 @@ def get_tournament_by_id(
     }
 
 
-# get all participants in a tournament
+
+# Get all participants
+
 @router.get("/{tournament_id}/participants")
 def get_tournament_participants(
     tournament_id: str,
@@ -373,6 +449,8 @@ def get_tournament_participants(
     tournament = db.query(Tournament).filter_by(id=tournament_id).first()
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
+
+    tournament = _maybe_update_status(db, tournament)
 
     participants = (
         db.query(TournamentParticipant, User)
@@ -390,15 +468,18 @@ def get_tournament_participants(
                 "user_id": user.id,
                 "username": user.username,
                 "joined_at": p.joined_at,
-                "score": p.score,
+                "score": float(p.score or 0),
                 "paid": p.paid,
             }
             for p, user in participants
         ],
     }
-    
+
+
+
+# Pairings / Swiss-ish
+
 @router.post("/{tournament_id}/pairings/{round_no}")
-    
 def create_round_pairings(
     tournament_id: str,
     round_no: int,
@@ -409,30 +490,38 @@ def create_round_pairings(
     if not tournament:
         raise HTTPException(404, "Tournament not found")
 
+    tournament = _maybe_update_status(db, tournament)
+
     if tournament.creator_id != current_user.id:
         raise HTTPException(403, "Only creator can generate pairings")
 
-    if round_no < 1 or round_no > tournament.rounds:
+    if round_no < 1 or round_no > int(tournament.rounds or 0):
         raise HTTPException(400, "Invalid round number")
 
-    # prevent duplicate round creation
-    existing = db.query(TournamentMatch).filter_by(tournament_id=tournament_id, round=round_no).first()
+    existing = (
+        db.query(TournamentMatch)
+        .filter_by(tournament_id=tournament_id, round=round_no)
+        .first()
+    )
     if existing:
         raise HTTPException(400, "Pairings for this round already exist")
 
     pairings = generate_pairings(db, tournament_id, round_no)
 
     for white_id, black_id in pairings:
-        db.add(TournamentMatch(
-            tournament_id=tournament_id,
-            round=round_no,
-            white_id=white_id,
-            black_id=black_id,
-            status="scheduled"
-        ))
+        db.add(
+            TournamentMatch(
+                tournament_id=tournament_id,
+                round=round_no,
+                white_id=white_id,
+                black_id=black_id,
+                status="scheduled",
+            )
+        )
 
     db.commit()
     return {"success": True, "round": round_no, "created_matches": len(pairings)}
+
 
 @router.post("/{tournament_id}/matches/{match_id}/result")
 def submit_match_result(
@@ -446,7 +535,11 @@ def submit_match_result(
     if not tournament:
         raise HTTPException(404, "Tournament not found")
 
-    match = db.query(TournamentMatch).filter_by(id=match_id, tournament_id=tournament_id).first()
+    match = (
+        db.query(TournamentMatch)
+        .filter_by(id=match_id, tournament_id=tournament_id)
+        .first()
+    )
     if not match:
         raise HTTPException(404, "Match not found")
 
@@ -456,45 +549,49 @@ def submit_match_result(
     match.result = result
     match.status = "completed"
 
-  
+    white_p = (
+        db.query(TournamentParticipant)
+        .filter_by(tournament_id=tournament_id, user_id=match.white_id)
+        .first()
+    )
+    black_p = (
+        db.query(TournamentParticipant)
+        .filter_by(tournament_id=tournament_id, user_id=match.black_id)
+        .first()
+    )
 
-# update scores
-    white_p = db.query(TournamentParticipant).filter_by(tournament_id=tournament_id, user_id=match.white_id).first()
-    black_p = db.query(TournamentParticipant).filter_by(tournament_id=tournament_id, user_id=match.black_id).first()
-        
-    if white_p and black_p:
-        white_score = Decimal(str(white_p.score or 0))
-        black_score = Decimal(str(black_p.score or 0))
+    if not white_p or not black_p:
+        raise HTTPException(400, "Participants not found for this match")
 
-        if result == "1-0":
-            white_p.score = white_score + Decimal("1.0")
-        elif result == "0-1":
-            black_p.score = black_score + Decimal("1.0")
-        else:  # "1/2-1/2"
-            white_p.score = white_score + Decimal("0.5")
-            black_p.score = black_score + Decimal("0.5")
+    white_score = Decimal(str(white_p.score or 0))
+    black_score = Decimal(str(black_p.score or 0))
 
+    if result == "1-0":
+        white_p.score = white_score + Decimal("1.0")
+    elif result == "0-1":
+        black_p.score = black_score + Decimal("1.0")
+    else:
+        white_p.score = white_score + Decimal("0.5")
+        black_p.score = black_score + Decimal("0.5")
 
-        db.commit()
-
-        return {"success": True, "match_id": match.id, "result": match.result}
+    db.commit()
+    return {"success": True, "match_id": match.id, "result": match.result}
 
 
- 
 def _already_played(pairs_set: set[tuple[str, str]], a: str, b: str) -> bool:
     x, y = (a, b) if a < b else (b, a)
     return (x, y) in pairs_set
+
 
 def _add_pair(pairs_set: set[tuple[str, str]], a: str, b: str):
     x, y = (a, b) if a < b else (b, a)
     pairs_set.add((x, y))
 
+
 def generate_pairings(db: Session, tournament_id: str, round_no: int) -> list[tuple[str, str]]:
-    # Get participants
     participants = db.query(TournamentParticipant).filter_by(tournament_id=tournament_id).all()
     user_ids = [p.user_id for p in participants]
 
-    # Load previous pairings to avoid repeats
     prev_matches = db.query(TournamentMatch).filter_by(tournament_id=tournament_id).all()
     played = set()
     for m in prev_matches:
@@ -503,7 +600,6 @@ def generate_pairings(db: Session, tournament_id: str, round_no: int) -> list[tu
     if round_no == 1:
         random.shuffle(user_ids)
     else:
-        # Swiss-ish: sort by score desc
         score_map = {p.user_id: float(p.score or 0) for p in participants}
         user_ids.sort(key=lambda uid: score_map.get(uid, 0), reverse=True)
 
@@ -515,7 +611,6 @@ def generate_pairings(db: Session, tournament_id: str, round_no: int) -> list[tu
         if a in used:
             continue
 
-        # find best opponent not used and not already played
         opponent = None
         for j in range(i + 1, len(user_ids)):
             b = user_ids[j]
@@ -525,7 +620,6 @@ def generate_pairings(db: Session, tournament_id: str, round_no: int) -> list[tu
                 opponent = b
                 break
 
-        # if we can't avoid repeats, just take next available
         if opponent is None:
             for j in range(i + 1, len(user_ids)):
                 b = user_ids[j]
@@ -534,7 +628,6 @@ def generate_pairings(db: Session, tournament_id: str, round_no: int) -> list[tu
                     break
 
         if opponent is None:
-            # odd player out => bye (no match created)
             used.add(a)
             continue
 
