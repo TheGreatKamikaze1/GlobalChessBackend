@@ -9,3 +9,4 @@ REDIS_URL = os.getenv(
     "REDIS_URL",
     "redis://default:TnDyjVnpzCrLseOHGSfqSKwioHUhfdcL@redis.railway.internal:6379"
 )
+

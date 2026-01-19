@@ -2,12 +2,14 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import List
 
+
 class RecentGame(BaseModel):
     id: str
     opponent: str
     result: str
     stake: float
     completedAt: datetime
+
 
 class DashboardStats(BaseModel):
     totalGames: int
@@ -19,6 +21,7 @@ class DashboardStats(BaseModel):
     totalEarnings: float
     currentRating: int
     recentGames: List[RecentGame]
+
 
 class DashboardResponse(BaseModel):
     success: bool = True
