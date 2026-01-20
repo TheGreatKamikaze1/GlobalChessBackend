@@ -23,13 +23,7 @@ router = APIRouter(tags=["Tournaments"])
 
 
 def _maybe_update_status(db: Session, tournament: Tournament) -> Tournament:
-    """
-    Ensures tournament.status matches time:
-    UPCOMING -> RUNNING at start_time
-    RUNNING/UPCOMING -> FINISHED at end_time
-    CANCELLED stays CANCELLED
-    FINISHED stays FINISHED
-    """
+   
     if not tournament:
         return tournament
 
@@ -108,7 +102,7 @@ def create_tournament(
     db.commit()
     db.refresh(tournament)
 
-    # Schedule start/finish (best effort)
+    # schedule start/finish 
     schedule_tournament(
         tournament_id=tournament.id,
         start_time=payload.start_time,
@@ -477,7 +471,7 @@ def get_tournament_participants(
 
 
 
-# Pairings / Swiss-ish
+# pairings
 
 @router.post("/{tournament_id}/pairings/{round_no}")
 def create_round_pairings(
