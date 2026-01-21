@@ -47,7 +47,7 @@ async def _credit_wallet(amount: Decimal, reference: str, access_token: str):
                 },
             )
     except httpx.RequestError as e:
-        # Force Paystack retry by returning 502
+       
         raise HTTPException(status_code=502, detail=f"Deposit call network error: {str(e)[:200]}")
 
     if resp.status_code < 200 or resp.status_code >= 300:
@@ -101,7 +101,7 @@ async def paystack_initialize(
     payment = Payment(
         reference=reference,
         email=data.email,
-        amount=Decimal(str(data.amount)),  # stored in NAIRA
+        amount=Decimal(str(data.amount)),  
         currency="NGN",
         status="pending",
         provider="paystack",

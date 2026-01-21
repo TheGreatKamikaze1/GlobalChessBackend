@@ -17,6 +17,8 @@ def _auth_headers() -> dict:
     }
 
 
+
+
 async def initialize_payment(email: str, amount_naira: float | int | Decimal):
     amount_kobo = int(Decimal(str(amount_naira)) * Decimal("100"))
 
@@ -26,10 +28,21 @@ async def initialize_payment(email: str, amount_naira: float | int | Decimal):
         "currency": "NGN",
     }
 
-    url = f"{_base_url()}/transaction/initialize"
+
+    if settings.PAYSTACK_CALLBACK_URL:
+        payload["callback_url"] = str(settings.PAYSTACK_CALLBACK_URL)
+
+    base_url = str(settings.PAYSTACK_BASE_URL).rstrip("/")
+    url = f"{base_url}/transaction/initialize"
+
+    headers = {
+        "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
+        "Content-Type": "application/json",
+        "User-Agent": "GlobalChess-FastAPI",
+    }
 
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(url, json=payload, headers=_auth_headers())
+        response = await client.post(url, json=payload, headers=headers)
 
     if response.status_code != 200:
         raise RuntimeError(f"Paystack error {response.status_code}: {response.text}")
@@ -155,3 +168,4 @@ async def finalize_transfer(transfer_code: str, otp: str):
         raise RuntimeError(f"Paystack finalize_transfer error {resp.status_code}: {resp.text}")
 
     return resp.json()
+

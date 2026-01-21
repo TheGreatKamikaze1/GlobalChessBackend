@@ -5,7 +5,7 @@ from payment_service.app.core.config import settings
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 
-# Safe: only set if present
+
 if settings.STRIPE_SECRET_KEY:
     stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -28,7 +28,7 @@ async def stripe_webhook(request: Request):
             secret=settings.STRIPE_WEBHOOK_SECRET,
         )
     except ValueError:
-        # Invalid payload
+       
         raise HTTPException(status_code=400, detail="Invalid payload")
     except stripe.error.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid signature")
