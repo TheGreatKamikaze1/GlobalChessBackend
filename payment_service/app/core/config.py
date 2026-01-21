@@ -1,4 +1,3 @@
-
 from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,8 +8,10 @@ class Settings(BaseSettings):
     PAYSTACK_SECRET_KEY: str
     PAYSTACK_BASE_URL: AnyHttpUrl = "https://api.paystack.co"
 
-
     CORE_API_BASE_URL: AnyHttpUrl = "https://globalchessbackend-production.up.railway.app"
+
+  
+    INTERNAL_WEBHOOK_SECRET: str = ""
 
     STRIPE_SECRET_KEY: str | None = None
     STRIPE_WEBHOOK_SECRET: str | None = None

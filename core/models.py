@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy import Column, String, Numeric, DateTime, ForeignKey, Text, Integer, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from sqlalchemy.dialects.postgresql import JSONB
 
 from core.database import Base
 
@@ -127,8 +128,38 @@ class Transaction(Base):
 
     type = Column(String, nullable=False, index=True)
     reference = Column(String, unique=True, nullable=True)
+
+    # PENDING | PROCESSING | OTP_REQUIRED | COMPLETED | FAILED | REVERSED
     status = Column(String, default="PENDING", index=True)
+
+    # --- Payout / Withdrawal audit fields ---
+    provider = Column(String(32), nullable=True)             
+    payout_status = Column(String(32), nullable=True)       
+
+    bank_code = Column(String(10), nullable=True)            
+    bank_name = Column(String(120), nullable=True)          
+    account_name = Column(Text, nullable=True)               
+    account_number_last4 = Column(String(4), nullable=True) 
+
+    recipient_code = Column(String(64), nullable=True)       
+    transfer_code = Column(String(64), nullable=True)        
+
+    withdrawal_reason = Column(Text, nullable=True)
+
+    payout_initiated_at = Column(DateTime(timezone=True), nullable=True)
+    payout_completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    payout_event = Column(String(64), nullable=True)         # e.g. transfer.success
+
+    meta = Column(JSONB, nullable=True)                      
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="transactions")
+
+    __table_args__ = (
+        
+        Index("ix_transactions_withdrawals_reference", "reference", postgresql_where=(type == "WITHDRAWAL")),
+        Index("ix_transactions_withdrawals_status_created", "status", "created_at", postgresql_where=(type == "WITHDRAWAL")),
+    )
+
