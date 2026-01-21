@@ -48,6 +48,8 @@ app.include_router(transaction_router, prefix="/api/transactions", tags=["Transa
 app.include_router(users_router, prefix="/api/users", tags=["Users"])
 app.include_router(stats_router, prefix="/api/stats", tags=["Statistics"])
 app.include_router(payment_router, prefix="/api/payments", tags=["Payments"])
+
+app.include_router(payment_router, tags=["Payments"])
 app.include_router(tournaments_router, prefix="/api/tournaments", tags=["Tournaments"])
 
 
