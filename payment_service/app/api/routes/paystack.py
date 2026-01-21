@@ -14,37 +14,37 @@ from payment_service.app.models.payment import Payment
 from payment_service.app.db.session import get_db
 from payment_service.app.core.config import settings
 
-router = APIRouter(prefix="/paystack", tags=["Paystack"])
+
+# Tag ONLY here => no duplicate Swagger categories
+router = APIRouter(prefix="/paystack", tags=["Payments"])
 
 
 def _transaction_url() -> str:
-    if not settings.CORE_API_BASE_URL:
-        raise HTTPException(
-            status_code=500,
-            detail="CORE_API_BASE_URL is not set (needed to credit wallet).",
-        )
     return f"{str(settings.CORE_API_BASE_URL).rstrip('/')}/api/transactions/deposit"
 
 
 async def _credit_wallet(amount: Decimal, reference: str, access_token: str):
     url = _transaction_url()
-    async with httpx.AsyncClient(timeout=15) as client:
+
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         resp = await client.post(
             url,
             json={
-                "amount": str(amount),       # Decimal-safe
+                "amount": str(amount),  
                 "reference": reference,
             },
             headers={
                 "x-internal-call": "PAYSTACK",
                 "Authorization": f"Bearer {access_token}",
             },
-            follow_redirects=True,
         )
 
     if resp.status_code < 200 or resp.status_code >= 300:
-        detail = (resp.text or "")[:300]
-        raise HTTPException(status_code=502, detail=f"Deposit failed {resp.status_code}: {detail}")
+        detail = (resp.text or "")[:500]
+        raise HTTPException(
+            status_code=502,
+            detail=f"Wallet credit failed {resp.status_code}: {detail}",
+        )
 
 
 @router.post("/initialize")
@@ -62,7 +62,7 @@ async def paystack_initialize(
     payment = Payment(
         reference=reference,
         email=data.email,
-        amount=data.amount,  # stored in NAIRA
+        amount=Decimal(str(data.amount)),  
         currency="NGN",
         status="pending",
         provider="paystack",
@@ -82,7 +82,8 @@ async def paystack_initialize(
 @router.post("/webhook")
 async def paystack_webhook(
     request: Request,
-    x_paystack_signature: str = Header(None),
+   
+    x_paystack_signature: str = Header(None, alias="x-paystack-signature"),
     db: Session = Depends(get_db),
 ):
     body = await request.body()
@@ -98,7 +99,7 @@ async def paystack_webhook(
     if not reference:
         raise HTTPException(status_code=400, detail="Missing reference")
 
-    # Paystack amount is in kobo (int)
+    # Paystack amount is in kobo
     amount = (Decimal(str(data.get("amount", 0))) / Decimal("100"))
 
     payment = (
@@ -114,10 +115,9 @@ async def paystack_webhook(
     if payment.verified:
         return {"status": "already processed"}
 
-    # Credit wallet FIRST (idempotent deposit prevents double-credit)
+  
     await _credit_wallet(amount=amount, reference=reference, access_token=payment.access_token)
 
-    # Then mark payment verified
     payment.status = "success"
     payment.verified = True
     payment.amount = amount
@@ -132,10 +132,16 @@ async def verify_paystack_payment(
     db: Session = Depends(get_db),
 ):
     response = await verify_payment(reference)
+
     if response.get("data", {}).get("status") != "success":
         raise HTTPException(status_code=400, detail="Payment not successful")
 
-    payment = db.query(Payment).filter_by(reference=reference).with_for_update().first()
+    payment = (
+        db.query(Payment)
+        .filter_by(reference=reference)
+        .with_for_update()
+        .first()
+    )
     if not payment:
         raise HTTPException(status_code=404, detail="Payment record not found")
 

@@ -4,7 +4,7 @@ import httpx
 from payment_service.app.core.config import settings
 
 
-async def initialize_payment(email: str, amount_naira: float):
+async def initialize_payment(email: str, amount_naira: float | int):
     amount_kobo = int(float(amount_naira) * 100)
 
     payload = {
@@ -41,12 +41,12 @@ async def verify_payment(reference: str):
         response = await client.get(url, headers=headers)
 
     if response.status_code != 200:
-        raise RuntimeError(response.text)
+        raise RuntimeError(f"Paystack verify error {response.status_code}: {response.text}")
 
     return response.json()
 
 
-def verify_webhook_signature(payload: bytes, signature: str) -> bool:
+def verify_webhook_signature(payload: bytes, signature: str | None) -> bool:
     if not signature:
         return False
 
