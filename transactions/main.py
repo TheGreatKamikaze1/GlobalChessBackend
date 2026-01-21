@@ -4,15 +4,10 @@ from decimal import Decimal
 
 from core.database import get_db
 from core.models import User, Transaction
-from transactions.schemas import (
-    DepositRequest,
-    WithdrawRequest,
-    TransactionResponse,
-    TransactionHistoryResponse,
-)
+from transactions.schemas import DepositRequest, WithdrawRequest, TransactionResponse, TransactionHistoryResponse
 from core.auth import get_current_user
 
-router = APIRouter(tags=["Transactions"]) 
+router = APIRouter(tags=["Transactions"])
 
 
 @router.post("/deposit", response_model=TransactionResponse)
@@ -21,20 +16,37 @@ def deposit_funds(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-
+    # Idempotency by reference
     if payload.reference:
         existing = db.query(Transaction).filter_by(reference=payload.reference).first()
         if existing:
-            raise HTTPException(status_code=400, detail="Duplicate transaction reference")
+            # Security: same reference must belong to same user
+            if existing.user_id != current_user.id:
+                raise HTTPException(status_code=400, detail="Reference already used")
+
+            user = db.query(User).filter(User.id == current_user.id).first()
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            return {
+                "success": True,
+                "data": {
+                    "transactionId": str(existing.id),
+                    "amount": existing.amount,
+                    "newBalance": user.balance,
+                    "status": existing.status,
+                    "createdAt": existing.created_at.isoformat() if existing.created_at else None,
+                },
+            }
 
     user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     user.balance = (user.balance or Decimal("0.00")) + payload.amount
-    
+
     txn = Transaction(
-        user_id=current_user.id,    
+        user_id=current_user.id,
         amount=payload.amount,
         type="DEPOSIT",
         reference=payload.reference,
