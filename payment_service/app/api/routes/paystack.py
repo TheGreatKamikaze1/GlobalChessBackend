@@ -13,6 +13,7 @@ from payment_service.app.models.payment import Payment
 from payment_service.app.db.session import get_db
 from payment_service.app.core.config import settings
 
+# keep this so routes are /api/payments/paystack/*
 router = APIRouter(prefix="/paystack", tags=["Paystack"])
 
 
@@ -21,19 +22,26 @@ def _norm_email(email: str) -> str:
 
 
 def _transaction_deposit_url(request: Request | None = None) -> str:
-   
-    base = str(settings.CORE_API_BASE_URL).rstrip("/") if settings.CORE_API_BASE_URL else None
-    if not base:
-        if not request:
-           
-            base = "http://localhost:8000"
-        else:
-            base = str(request.base_url).rstrip("/")
+    # Prefer configured base URL if provided (good for multi-service setups)
+    if settings.CORE_API_BASE_URL:
+        base = str(settings.CORE_API_BASE_URL).rstrip("/")
+        return f"{base}/api/transactions/deposit"
 
-    return f"{base}/api/transactions/deposit"
+    # Otherwise derive from the current request (works for monolith setup on Railway)
+    if request:
+        base = str(request.base_url).rstrip("/")
+        return f"{base}/api/transactions/deposit"
+
+    # If we get here, it's a programmer error (we forgot to pass request)
+    raise RuntimeError("Missing request and CORE_API_BASE_URL for deposit URL resolution")
 
 
-async def _credit_wallet(amount: float, reference: str, access_token: str, request: Request | None = None):
+async def _credit_wallet(
+    amount: float,
+    reference: str,
+    access_token: str,
+    request: Request | None = None,
+):
     url = _transaction_deposit_url(request)
 
     async with httpx.AsyncClient(timeout=15) as client:
@@ -70,7 +78,7 @@ async def paystack_initialize(
     payment = Payment(
         reference=reference,
         email=email,
-        amount=data.amount,         
+        amount=data.amount,          
         currency="NGN",
         status="pending",
         provider="paystack",
@@ -82,7 +90,6 @@ async def paystack_initialize(
         db.commit()
     except IntegrityError:
         db.rollback()
-       
         return response
 
     return response
@@ -99,8 +106,6 @@ async def paystack_webhook(
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     payload = await request.json()
-
-    # Only process successful charges
     if payload.get("event") != "charge.success":
         return {"status": "ignored"}
 
@@ -109,8 +114,7 @@ async def paystack_webhook(
     if not reference:
         raise HTTPException(status_code=400, detail="Missing reference")
 
-    # Paystack gives amount in kobo
-    amount = float(data.get("amount", 0)) / 100.0
+    amount = float(data.get("amount", 0)) / 100.0  # kobo -> naira
 
     payment = (
         db.query(Payment)
@@ -119,7 +123,6 @@ async def paystack_webhook(
         .first()
     )
 
-   
     if not payment:
         return {"status": "payment not tracked"}
 
@@ -129,16 +132,15 @@ async def paystack_webhook(
     if not payment.access_token:
         raise HTTPException(status_code=400, detail="Missing payment access token")
 
+    payment.amount = amount
 
-    try:
-        if float(payment.amount) != float(amount):
-            payment.amount = amount
-    except Exception:
-        # keep going even if decimal conversion is weird
-        payment.amount = amount
-
-    # Credit wallet FIRST, then mark verified
-    await _credit_wallet(amount=amount, reference=reference, access_token=payment.access_token, request=request)
+    # credit first, then mark verified
+    await _credit_wallet(
+        amount=amount,
+        reference=reference,
+        access_token=payment.access_token,
+        request=request,
+    )
 
     payment.status = "success"
     payment.verified = True
@@ -150,6 +152,7 @@ async def paystack_webhook(
 @router.get("/verify/{reference}")
 async def verify_paystack_payment(
     reference: str,
+    request: Request,  
     db: Session = Depends(get_db),
 ):
     response = await verify_payment(reference)
@@ -164,14 +167,17 @@ async def verify_paystack_payment(
     if payment.verified:
         return {"status": "already verified", "reference": reference}
 
-    # Paystack returns amount in kobo
     paystack_amount = float(response["data"]["amount"]) / 100.0
 
     if not payment.access_token:
         raise HTTPException(status_code=400, detail="Missing payment access token")
 
-    # Credit wallet
-    await _credit_wallet(amount=paystack_amount, reference=reference, access_token=payment.access_token)
+    await _credit_wallet(
+        amount=paystack_amount,
+        reference=reference,
+        access_token=payment.access_token,
+        request=request,  
+    )
 
     payment.status = "success"
     payment.verified = True
