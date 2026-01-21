@@ -1,3 +1,4 @@
+# main.py (core backend root)
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -33,7 +34,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:8080",
         "http://127.0.0.1:8080",
-    ],  # Replace in production
+        # Add your production frontend origin(s) here
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
     allow_credentials=True,
@@ -47,9 +49,8 @@ app.include_router(challenge_router, prefix="/api/challenges", tags=["Challenges
 app.include_router(transaction_router, prefix="/api/transactions", tags=["Transactions"])
 app.include_router(users_router, prefix="/api/users", tags=["Users"])
 app.include_router(stats_router, prefix="/api/stats", tags=["Statistics"])
-app.include_router(payment_router, prefix="/api/payments", tags=["Payments"])
+app.include_router(payment_router, prefix="/api/payments")
 
-app.include_router(payment_router, tags=["Payments"])
 app.include_router(tournaments_router, prefix="/api/tournaments", tags=["Tournaments"])
 
 
