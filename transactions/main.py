@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from passlib.context import CryptContext
 from pydantic import BaseModel
-
+from transactions.schemas import BanksResponse
 from core.database import get_db
 from core.models import User, Transaction
 from transactions.schemas import (
@@ -19,6 +19,7 @@ from transactions.schemas import (
 from core.auth import get_current_user
 
 from payment_service.app.services.paystack_service import (
+    list_banks,
     resolve_account_number,
     create_transfer_recipient,
     initiate_transfer,
@@ -122,6 +123,38 @@ def deposit_funds(
             "status": txn.status,
             "createdAt": txn.created_at.isoformat(),
         },
+    }
+
+
+@router.get("/banks", response_model=BanksResponse)
+async def get_all_banks(
+    country: str = Query("nigeria"),
+    per_page: int = Query(200, ge=1, le=500),
+    current_user: User = Depends(get_current_user), 
+):
+    try:
+        resp = await list_banks(country=country, per_page=per_page)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    banks = resp.get("data") or []
+
+   
+    return {
+        "success": True,
+        "data": [
+            {
+                "name": b.get("name"),
+                "code": b.get("code"),
+                "slug": b.get("slug"),
+                "longcode": b.get("longcode"),
+                "country": b.get("country"),
+                "currency": b.get("currency"),
+                "type": b.get("type"),
+            }
+            for b in banks
+            if b.get("name") and b.get("code")
+        ],
     }
 
 

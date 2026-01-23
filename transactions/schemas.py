@@ -56,3 +56,17 @@ class TransactionHistoryResponse(BaseModel):
     success: bool = True
     data: List[TransactionHistoryItem]
     pagination: dict
+
+class BankItem(BaseModel):
+    name: str
+    code: str
+    slug: Optional[str] = None
+    longcode: Optional[str] = None
+    country: Optional[str] = None
+    currency: Optional[str] = None
+    type: Optional[str] = None
+
+
+class BanksResponse(BaseModel):
+    success: bool = True
+    data: List[BankItem]

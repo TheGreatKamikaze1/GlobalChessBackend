@@ -17,8 +17,6 @@ def _auth_headers() -> dict:
     }
 
 
-
-
 async def initialize_payment(email: str, amount_naira: float | int | Decimal):
     amount_kobo = int(Decimal(str(amount_naira)) * Decimal("100"))
 
@@ -157,7 +155,7 @@ async def verify_transfer(reference: str):
 
 
 async def finalize_transfer(transfer_code: str, otp: str):
-    # Endpoint is /transfer/finalize_transfer
+
     url = f"{_base_url()}/transfer/finalize_transfer"
     payload = {"transfer_code": transfer_code, "otp": otp}
 
@@ -169,3 +167,15 @@ async def finalize_transfer(transfer_code: str, otp: str):
 
     return resp.json()
 
+
+async def list_banks(country: str = "nigeria", per_page: int = 200):
+    url = f"{_base_url()}/bank"
+    params = {"country": country, "perPage": per_page}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(url, params=params, headers=_auth_headers())
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"Paystack list_banks error {resp.status_code}: {resp.text}")
+
+    return resp.json()
