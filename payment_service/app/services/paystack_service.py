@@ -17,6 +17,11 @@ def _auth_headers() -> dict:
     }
 
 
+def _ensure_2xx(resp: httpx.Response, label: str):
+    if resp.status_code < 200 or resp.status_code >= 300:
+        raise RuntimeError(f"Paystack {label} error {resp.status_code}: {resp.text}")
+
+
 async def initialize_payment(email: str, amount_naira: float | int | Decimal):
     amount_kobo = int(Decimal(str(amount_naira)) * Decimal("100"))
 
@@ -26,38 +31,27 @@ async def initialize_payment(email: str, amount_naira: float | int | Decimal):
         "currency": "NGN",
     }
 
-
-    if settings.PAYSTACK_CALLBACK_URL:
+   
+    if getattr(settings, "PAYSTACK_CALLBACK_URL", None):
         payload["callback_url"] = str(settings.PAYSTACK_CALLBACK_URL)
 
-    base_url = str(settings.PAYSTACK_BASE_URL).rstrip("/")
-    url = f"{base_url}/transaction/initialize"
-
-    headers = {
-        "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
-        "Content-Type": "application/json",
-        "User-Agent": "GlobalChess-FastAPI",
-    }
+    url = f"{_base_url()}/transaction/initialize"
 
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(url, json=payload, headers=headers)
+        resp = await client.post(url, json=payload, headers=_auth_headers())
 
-    if response.status_code != 200:
-        raise RuntimeError(f"Paystack error {response.status_code}: {response.text}")
-
-    return response.json()
+    _ensure_2xx(resp, "initialize")
+    return resp.json()
 
 
 async def verify_payment(reference: str):
     url = f"{_base_url()}/transaction/verify/{reference}"
 
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(url, headers=_auth_headers())
+        resp = await client.get(url, headers=_auth_headers())
 
-    if response.status_code != 200:
-        raise RuntimeError(f"Paystack verify error {response.status_code}: {response.text}")
-
-    return response.json()
+    _ensure_2xx(resp, "verify_payment")
+    return resp.json()
 
 
 def verify_webhook_signature(payload: bytes, signature: str | None) -> bool:
@@ -74,6 +68,7 @@ def verify_webhook_signature(payload: bytes, signature: str | None) -> bool:
 
 
 
+
 async def list_banks(country: str = "nigeria", per_page: int = 200):
     url = f"{_base_url()}/bank"
     params = {"country": country, "perPage": per_page}
@@ -81,9 +76,7 @@ async def list_banks(country: str = "nigeria", per_page: int = 200):
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(url, params=params, headers=_auth_headers())
 
-    if resp.status_code != 200:
-        raise RuntimeError(f"Paystack list_banks error {resp.status_code}: {resp.text}")
-
+    _ensure_2xx(resp, "list_banks")
     return resp.json()
 
 
@@ -94,10 +87,10 @@ async def resolve_account_number(account_number: str, bank_code: str):
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(url, params=params, headers=_auth_headers())
 
-    if resp.status_code != 200:
-        raise RuntimeError(f"Paystack resolve_account error {resp.status_code}: {resp.text}")
-
+    _ensure_2xx(resp, "resolve_account")
     return resp.json()
+
+
 
 
 async def create_transfer_recipient(name: str, account_number: str, bank_code: str, currency: str = "NGN"):
@@ -113,14 +106,12 @@ async def create_transfer_recipient(name: str, account_number: str, bank_code: s
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(url, json=payload, headers=_auth_headers())
 
-    if resp.status_code != 200:
-        raise RuntimeError(f"Paystack create_recipient error {resp.status_code}: {resp.text}")
-
+    
+    _ensure_2xx(resp, "create_recipient")
     return resp.json()
 
 
 async def initiate_transfer(amount_naira: Decimal, recipient_code: str, reference: str, reason: str | None = None):
-    # Paystack expects kobo for NGN
     amount_kobo = int(Decimal(str(amount_naira)) * Decimal("100"))
 
     url = f"{_base_url()}/transfer"
@@ -136,9 +127,7 @@ async def initiate_transfer(amount_naira: Decimal, recipient_code: str, referenc
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(url, json=payload, headers=_auth_headers())
 
-    if resp.status_code != 200:
-        raise RuntimeError(f"Paystack initiate_transfer error {resp.status_code}: {resp.text}")
-
+    _ensure_2xx(resp, "initiate_transfer")
     return resp.json()
 
 
@@ -148,34 +137,16 @@ async def verify_transfer(reference: str):
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(url, headers=_auth_headers())
 
-    if resp.status_code != 200:
-        raise RuntimeError(f"Paystack verify_transfer error {resp.status_code}: {resp.text}")
-
+    _ensure_2xx(resp, "verify_transfer")
     return resp.json()
 
 
 async def finalize_transfer(transfer_code: str, otp: str):
-
     url = f"{_base_url()}/transfer/finalize_transfer"
     payload = {"transfer_code": transfer_code, "otp": otp}
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(url, json=payload, headers=_auth_headers())
 
-    if resp.status_code != 200:
-        raise RuntimeError(f"Paystack finalize_transfer error {resp.status_code}: {resp.text}")
-
-    return resp.json()
-
-
-async def list_banks(country: str = "nigeria", per_page: int = 200):
-    url = f"{_base_url()}/bank"
-    params = {"country": country, "perPage": per_page}
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(url, params=params, headers=_auth_headers())
-
-    if resp.status_code != 200:
-        raise RuntimeError(f"Paystack list_banks error {resp.status_code}: {resp.text}")
-
+    _ensure_2xx(resp, "finalize_transfer")
     return resp.json()

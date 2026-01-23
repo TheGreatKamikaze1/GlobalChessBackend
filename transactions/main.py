@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from transactions.schemas import BanksResponse
+
 from core.database import get_db
 from core.models import User, Transaction
 from transactions.schemas import (
@@ -15,6 +15,7 @@ from transactions.schemas import (
     WithdrawRequest,
     TransactionResponse,
     TransactionHistoryResponse,
+    BanksResponse,
 )
 from core.auth import get_current_user
 
@@ -23,7 +24,7 @@ from payment_service.app.services.paystack_service import (
     resolve_account_number,
     create_transfer_recipient,
     initiate_transfer,
-    verify_transfer, 
+    verify_transfer,
 )
 
 router = APIRouter(tags=["Transactions"])
@@ -130,16 +131,15 @@ def deposit_funds(
 async def get_all_banks(
     country: str = Query("nigeria"),
     per_page: int = Query(200, ge=1, le=500),
-    current_user: User = Depends(get_current_user), 
+    current_user: User = Depends(get_current_user),
 ):
     try:
         resp = await list_banks(country=country, per_page=per_page)
-    except RuntimeError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Paystack list_banks failed: {str(e)[:300]}")
 
     banks = resp.get("data") or []
 
-   
     return {
         "success": True,
         "data": [
@@ -168,7 +168,7 @@ async def withdraw_funds(
 
     reference = payload.reference or f"wd_{uuid.uuid4().hex}"
 
-  
+    # Idempotency: if client retries same reference, return existing
     existing = (
         db.query(Transaction)
         .filter_by(user_id=current_user.id, type="WITHDRAWAL", reference=reference)
@@ -204,25 +204,33 @@ async def withdraw_funds(
     if user.balance is None or user.balance < payload.amount:
         raise HTTPException(status_code=400, detail="Insufficient funds")
 
-    resolved = await resolve_account_number(payload.account_number, payload.bank_code)
+    # 1) Resolve account name
+    try:
+        resolved = await resolve_account_number(payload.account_number, payload.bank_code)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Paystack resolve_account failed: {str(e)[:300]}")
+
     account_name = (resolved.get("data", {}) or {}).get("account_name")
     if not account_name:
         raise HTTPException(status_code=400, detail="Could not resolve account name")
 
- 
-    rcp = await create_transfer_recipient(
-        name=account_name,
-        account_number=payload.account_number,
-        bank_code=payload.bank_code,
-        currency="NGN",
-    )
+    # 2) Create transfer recipient
+    try:
+        rcp = await create_transfer_recipient(
+            name=account_name,
+            account_number=payload.account_number,
+            bank_code=payload.bank_code,
+            currency="NGN",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Paystack create_recipient failed: {str(e)[:300]}")
+
     recipient_code = (rcp.get("data", {}) or {}).get("recipient_code")
     if not recipient_code:
         raise HTTPException(status_code=502, detail="Recipient creation failed")
 
-   
+    # 3) Deduct wallet + create local txn
     user.balance = (user.balance or Decimal("0.00")) - payload.amount
-
     now = datetime.now(timezone.utc)
 
     txn = Transaction(
@@ -236,7 +244,7 @@ async def withdraw_funds(
         payout_status="initialized",
 
         bank_code=payload.bank_code,
-        bank_name=None,  
+        bank_name=None,
         account_name=account_name,
         account_number_last4=str(payload.account_number)[-4:],
 
@@ -258,7 +266,7 @@ async def withdraw_funds(
     db.commit()
     db.refresh(txn)
 
-    
+    # 4) Initiate Paystack transfer
     try:
         trf = await initiate_transfer(
             amount_naira=payload.amount,
@@ -267,14 +275,13 @@ async def withdraw_funds(
             reason=payload.reason,
         )
 
-        paystack_status = (trf.get("data", {}) or {}).get("status")  # e.g. pending / otp
+        paystack_status = (trf.get("data", {}) or {}).get("status")  # pending / otp etc
         transfer_code = (trf.get("data", {}) or {}).get("transfer_code")
 
         txn.transfer_code = transfer_code
         txn.payout_status = paystack_status or "pending"
         txn.status = "OTP_REQUIRED" if paystack_status == "otp" else "PROCESSING"
 
-       
         txn.meta = (txn.meta or {})
         txn.meta["transfer_init"] = (trf.get("data", {}) or {})
 
@@ -297,7 +304,7 @@ async def withdraw_funds(
         }
 
     except Exception as e:
-      
+        # Paystack initiation failed => refund wallet and mark txn failed
         user.balance = (user.balance or Decimal("0.00")) + payload.amount
         txn.status = "FAILED"
         txn.payout_status = "failed"
@@ -331,7 +338,7 @@ def withdraw_webhook_update(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    
+    # Persist provider details idempotently
     txn.provider = txn.provider or "paystack"
     txn.payout_status = status
     if payload.transfer_code and not txn.transfer_code:
@@ -348,16 +355,14 @@ def withdraw_webhook_update(
 
     now = datetime.now(timezone.utc)
 
-    # Handle success
+    # Success
     if status == "success":
-        
         if txn.status == "COMPLETED":
             if not txn.payout_completed_at:
                 txn.payout_completed_at = now
                 db.commit()
             return {"status": "already completed"}
 
-    
         if txn.status in ("FAILED", "REVERSED"):
             db.commit()
             return {"status": "ignored", "reason": "already failed/reversed"}
@@ -367,21 +372,18 @@ def withdraw_webhook_update(
         db.commit()
         return {"status": "completed"}
 
-   
+    # Failed / Reversed
     if txn.status in ("FAILED", "REVERSED"):
-        # Already finalized (and refunded)
         if not txn.payout_completed_at:
             txn.payout_completed_at = now
             db.commit()
         return {"status": "already finalized"}
 
-    # Refund wallet
     user.balance = (user.balance or Decimal("0.00")) + txn.amount
     txn.status = "REVERSED" if status == "reversed" else "FAILED"
     txn.payout_completed_at = now
     db.commit()
     return {"status": txn.status}
-
 
 
 @router.get("/withdraw/verify/{reference}", response_model=TransactionResponse)
@@ -417,9 +419,12 @@ async def verify_withdrawal_fallback(
             },
         }
 
-    resp = await verify_transfer(reference)
-    ps = (resp.get("data", {}) or {}).get("status")
+    try:
+        resp = await verify_transfer(reference)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Paystack verify_transfer failed: {str(e)[:300]}")
 
+    ps = (resp.get("data", {}) or {}).get("status")
     user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
