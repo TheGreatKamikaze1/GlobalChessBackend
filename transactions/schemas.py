@@ -12,15 +12,17 @@ class DepositRequest(BaseModel):
 class WithdrawRequest(BaseModel):
     amount: Decimal = Field(..., gt=0)
 
-    # Paystack transfer destination (NUBAN)
-    bank_code: str = Field(..., min_length=2, max_length=10, description="Paystack bank code e.g. 058")
-    account_number: str = Field(..., min_length=10, max_length=10, description="NUBAN account number (10 digits)")
+    bank_code: str = Field(..., min_length=3, max_length=10)
+    account_number: str = Field(..., min_length=10, max_length=10)
 
-  
-    reason: Optional[str] = Field(default="Wallet withdrawal")
-    reference: Optional[str] = Field(default=None, description="Optional idempotency reference")
 
-    password: str = Field(..., min_length=6, description="User password confirmation")
+    account_name: str = Field(..., min_length=2)
+
+    password: str = Field(..., min_length=1)
+
+    reason: Optional[str] = None
+    reference: Optional[str] = None
+
 
 
 class TransactionData(BaseModel):
@@ -70,3 +72,14 @@ class BankItem(BaseModel):
 class BanksResponse(BaseModel):
     success: bool = True
     data: List[BankItem]
+
+
+class ResolveAccountData(BaseModel):
+    account_name: str
+    account_number: str
+    bank_code: str
+
+
+class ResolveAccountResponse(BaseModel):
+    success: bool = True
+    data: ResolveAccountData

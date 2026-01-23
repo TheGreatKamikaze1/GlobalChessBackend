@@ -16,6 +16,7 @@ from transactions.schemas import (
     TransactionResponse,
     TransactionHistoryResponse,
     BanksResponse,
+    ResolveAccountResponse,
 )
 from core.auth import get_current_user
 
@@ -43,6 +44,11 @@ def _verify_password_or_401(user: User, password: str):
     ok = pwd_context.verify(normalize_password(password), user.password)
     if not ok:
         raise HTTPException(status_code=401, detail="Invalid password")
+
+
+def _norm_name(s: str) -> str:
+    # Normalize whitespace and case for safe comparisons
+    return " ".join((s or "").split()).strip().lower()
 
 
 def _require_internal_paystack(
@@ -158,6 +164,40 @@ async def get_all_banks(
     }
 
 
+@router.get("/resolve-account", response_model=ResolveAccountResponse)
+async def resolve_account(
+    account_number: str = Query(..., min_length=10, max_length=10),
+    bank_code: str = Query(..., min_length=3, max_length=10),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Frontend flow:
+    - user picks bank_code and types account_number
+    - call this endpoint to get account_name
+    - frontend must show account_name and only then enable Withdraw
+    """
+    try:
+        resp = await resolve_account_number(account_number=account_number, bank_code=bank_code)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Paystack resolve_account failed: {str(e)[:300]}")
+
+    data = resp.get("data") or {}
+    name = data.get("account_name")
+    acc = data.get("account_number") or account_number
+
+    if not name:
+        raise HTTPException(status_code=400, detail="Could not resolve account name")
+
+    return {
+        "success": True,
+        "data": {
+            "account_name": name,
+            "account_number": acc,
+            "bank_code": bank_code,
+        },
+    }
+
+
 @router.post("/withdraw", response_model=TransactionResponse)
 async def withdraw_funds(
     payload: WithdrawRequest,
@@ -168,7 +208,7 @@ async def withdraw_funds(
 
     reference = payload.reference or f"wd_{uuid.uuid4().hex}"
 
-    # Idempotency: if client retries same reference, return existing
+    # Idempotency
     existing = (
         db.query(Transaction)
         .filter_by(user_id=current_user.id, type="WITHDRAWAL", reference=reference)
@@ -204,20 +244,27 @@ async def withdraw_funds(
     if user.balance is None or user.balance < payload.amount:
         raise HTTPException(status_code=400, detail="Insufficient funds")
 
-    # 1) Resolve account name
+    # Resolve account again server-side (security), and enforce name match
     try:
         resolved = await resolve_account_number(payload.account_number, payload.bank_code)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Paystack resolve_account failed: {str(e)[:300]}")
 
-    account_name = (resolved.get("data", {}) or {}).get("account_name")
-    if not account_name:
+    resolved_name = (resolved.get("data", {}) or {}).get("account_name")
+    if not resolved_name:
         raise HTTPException(status_code=400, detail="Could not resolve account name")
 
-    # 2) Create transfer recipient
+    # IMPORTANT: user must not withdraw unless name has been resolved and matches
+    if _norm_name(payload.account_name) != _norm_name(resolved_name):
+        raise HTTPException(
+            status_code=400,
+            detail="Account name mismatch. Please resolve the account again before withdrawing.",
+        )
+
+    # Create transfer recipient
     try:
         rcp = await create_transfer_recipient(
-            name=account_name,
+            name=resolved_name,
             account_number=payload.account_number,
             bank_code=payload.bank_code,
             currency="NGN",
@@ -229,7 +276,7 @@ async def withdraw_funds(
     if not recipient_code:
         raise HTTPException(status_code=502, detail="Recipient creation failed")
 
-    # 3) Deduct wallet + create local txn
+    # Deduct wallet + create txn
     user.balance = (user.balance or Decimal("0.00")) - payload.amount
     now = datetime.now(timezone.utc)
 
@@ -245,7 +292,7 @@ async def withdraw_funds(
 
         bank_code=payload.bank_code,
         bank_name=None,
-        account_name=account_name,
+        account_name=resolved_name,
         account_number_last4=str(payload.account_number)[-4:],
 
         recipient_code=recipient_code,
@@ -266,7 +313,7 @@ async def withdraw_funds(
     db.commit()
     db.refresh(txn)
 
-    # 4) Initiate Paystack transfer
+    # Initiate transfer
     try:
         trf = await initiate_transfer(
             amount_naira=payload.amount,
@@ -275,7 +322,7 @@ async def withdraw_funds(
             reason=payload.reason,
         )
 
-        paystack_status = (trf.get("data", {}) or {}).get("status")  # pending / otp etc
+        paystack_status = (trf.get("data", {}) or {}).get("status")  # pending / otp
         transfer_code = (trf.get("data", {}) or {}).get("transfer_code")
 
         txn.transfer_code = transfer_code
@@ -304,7 +351,7 @@ async def withdraw_funds(
         }
 
     except Exception as e:
-        # Paystack initiation failed => refund wallet and mark txn failed
+        # Refund wallet + mark failed
         user.balance = (user.balance or Decimal("0.00")) + payload.amount
         txn.status = "FAILED"
         txn.payout_status = "failed"
@@ -312,7 +359,16 @@ async def withdraw_funds(
         txn.meta = (txn.meta or {})
         txn.meta["init_error"] = str(e)
         db.commit()
-        raise HTTPException(status_code=502, detail=str(e))
+
+        msg = str(e)
+        if "transfer_unavailable" in msg:
+            raise HTTPException(
+                status_code=400,
+                detail="Paystack Transfers is not enabled for this business account (transfer_unavailable). "
+                       "Upgrade/verify the Paystack business account to a Registered Business or enable Transfers in Paystack.",
+            )
+
+        raise HTTPException(status_code=502, detail=msg)
 
 
 @router.post("/withdraw/webhook")
@@ -338,7 +394,6 @@ def withdraw_webhook_update(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Persist provider details idempotently
     txn.provider = txn.provider or "paystack"
     txn.payout_status = status
     if payload.transfer_code and not txn.transfer_code:
@@ -355,7 +410,6 @@ def withdraw_webhook_update(
 
     now = datetime.now(timezone.utc)
 
-    # Success
     if status == "success":
         if txn.status == "COMPLETED":
             if not txn.payout_completed_at:
@@ -372,7 +426,6 @@ def withdraw_webhook_update(
         db.commit()
         return {"status": "completed"}
 
-    # Failed / Reversed
     if txn.status in ("FAILED", "REVERSED"):
         if not txn.payout_completed_at:
             txn.payout_completed_at = now
