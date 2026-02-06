@@ -34,12 +34,12 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:5173",
-        "https://global-connect-chess.netlify.app/",
+        "https://global-connect-chess.netlify.app",
         
     ],
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
 )
 
 app.add_exception_handler(AppException, app_exception_handler)
