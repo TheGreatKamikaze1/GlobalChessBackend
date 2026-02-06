@@ -37,3 +37,4 @@ pip-wheel-metadata/
 
 
 alembic/versions/*.py
+payment_service/.env
