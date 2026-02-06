@@ -75,6 +75,7 @@ class BanksResponse(BaseModel):
 
 
 class ResolveAccountData(BaseModel):
+    
     account_name: str
     account_number: str
     bank_code: str

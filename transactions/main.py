@@ -170,12 +170,7 @@ async def resolve_account(
     bank_code: str = Query(..., min_length=3, max_length=10),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Frontend flow:
-    - user picks bank_code and types account_number
-    - call this endpoint to get account_name
-    - frontend must show account_name and only then enable Withdraw
-    """
+  
     try:
         resp = await resolve_account_number(account_number=account_number, bank_code=bank_code)
     except Exception as e:
@@ -208,7 +203,7 @@ async def withdraw_funds(
 
     reference = payload.reference or f"wd_{uuid.uuid4().hex}"
 
-    # Idempotency
+ 
     existing = (
         db.query(Transaction)
         .filter_by(user_id=current_user.id, type="WITHDRAWAL", reference=reference)
@@ -244,7 +239,7 @@ async def withdraw_funds(
     if user.balance is None or user.balance < payload.amount:
         raise HTTPException(status_code=400, detail="Insufficient funds")
 
-    # Resolve account again server-side (security), and enforce name match
+   
     try:
         resolved = await resolve_account_number(payload.account_number, payload.bank_code)
     except Exception as e:

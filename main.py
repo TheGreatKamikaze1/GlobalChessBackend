@@ -32,8 +32,8 @@ def on_startup():
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
+
+        "https://global-connect-chess.netlify.app/",
         # Add your production frontend origin(s) here
     ],
     allow_methods=["*"],
