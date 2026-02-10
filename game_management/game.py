@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 import json
 from datetime import datetime, timezone
-
+import re
 from core.database import get_db
 from core.models import Game, User
 from game_management.dependencies import get_current_user_id_dep
@@ -18,9 +18,12 @@ from game_management.game_schema import (
     PlayerDetails,
     GameHistoryItem,
     ActiveGameItem,
+    PremoveRequest,
 )
 
 router = APIRouter(tags=["Games"])
+
+_UCI_RE = re.compile(r"^[a-h][1-8][a-h][1-8][qrbn]?$", re.IGNORECASE)
 
 
 def get_game_or_404(db: Session, game_id: str) -> Game:
@@ -30,15 +33,13 @@ def get_game_or_404(db: Session, game_id: str) -> Game:
     return game
 
 
-def check_participant(game: Game, user_id: int):
+def check_participant(game: Game, user_id: str):
     if user_id not in (game.white_id, game.black_id):
         raise HTTPException(status_code=403, detail="Not a participant")
 
 
 def get_current_turn(moves: list[str]) -> str:
-    
     return "white" if len(moves) % 2 == 0 else "black"
-
 
 
 @router.get("/history", response_model=PaginatedHistory)
@@ -46,7 +47,7 @@ def game_history(
     limit: int = Query(10, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id_dep),
+    user_id: str = Depends(get_current_user_id_dep),
 ):
     query = (
         db.query(Game)
@@ -91,18 +92,14 @@ def game_history(
     return {
         "success": True,
         "data": items,
-        "pagination": {
-            "limit": limit,
-            "offset": offset,
-            "total": total,
-        },
+        "pagination": {"limit": limit, "offset": offset, "total": total},
     }
 
 
 @router.get("/active", response_model=ActiveGamesResponse)
 def active_games(
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id_dep),
+    user_id: str = Depends(get_current_user_id_dep),
 ):
     games = (
         db.query(Game)
@@ -140,7 +137,7 @@ def active_games(
 @router.get("/all")
 def all_games(
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id_dep),
+    user_id: str = Depends(get_current_user_id_dep),
 ):
     games = (
         db.query(Game)
@@ -150,7 +147,6 @@ def all_games(
     )
 
     response = []
-
     for g in games:
         opponent = g.black if g.white_id == user_id else g.white
         moves = json.loads(g.moves or "[]")
@@ -179,6 +175,67 @@ def all_games(
         )
 
     return {"success": True, "data": response}
+
+
+@router.post("/{game_id}/premove")
+def set_or_cancel_premove(
+    game_id: str,
+    payload: PremoveRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id_dep),
+):
+    game = db.query(Game).filter(Game.id == game_id).with_for_update().first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+
+    if game.status != "ONGOING":
+        raise HTTPException(400, "Game not active")
+
+    check_participant(game, user_id)
+
+    move = (payload.move or "").strip()
+    if move == "":
+        move = None
+
+    is_white = (user_id == game.white_id)
+
+    if move is None:
+        if is_white:
+            game.premove_white = None
+        else:
+            game.premove_black = None
+        db.commit()
+        return {"success": True, "message": "Premove cancelled"}
+
+    if not _UCI_RE.match(move):
+        raise HTTPException(400, "Invalid premove format. Use UCI like e2e4")
+
+    move = move.lower()
+
+    if is_white:
+        game.premove_white = move
+    else:
+        game.premove_black = move
+
+    db.commit()
+    return {"success": True, "message": "Premove set", "move": move}
+
+
+@router.get("/{game_id}/premove")
+def get_my_premove(
+    game_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id_dep),
+):
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+
+    check_participant(game, user_id)
+
+    is_white = (user_id == game.white_id)
+    move = game.premove_white if is_white else game.premove_black
+    return {"success": True, "data": {"move": move}}
 
 
 
@@ -216,7 +273,7 @@ def make_move(
     game_id: str,
     req: MoveRequest,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id_dep),
+    user_id: str = Depends(get_current_user_id_dep),
 ):
     result = process_move(db, game_id, user_id, req.move)
 
@@ -247,7 +304,7 @@ def make_move(
 def resign_game(
     game_id: str,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id_dep),
+    user_id: str = Depends(get_current_user_id_dep),
 ):
     game = db.query(Game).filter(Game.id == game_id).with_for_update().first()
     if not game:
@@ -266,9 +323,11 @@ def resign_game(
     game.winner_id = winner_id
     game.completed_at = datetime.now(timezone.utc)
 
-    winner = db.query(User).filter(User.id == winner_id).with_for_update().first()
-    if winner:
-        winner.balance += game.stake * 2
+    stake = float(game.stake or 0)
+    if stake > 0:
+        winner = db.query(User).filter(User.id == winner_id).with_for_update().first()
+        if winner:
+            winner.balance += game.stake * 2
 
     db.commit()
 

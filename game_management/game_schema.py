@@ -18,6 +18,12 @@ class MoveRequest(BaseModel):
         ),
     )
 
+class PremoveRequest(BaseModel):
+    move: Optional[str] = Field(
+        default=None,
+        description="UCI move like 'e2e4'. Send null or empty to cancel premove."
+    )
+
 
 class GameResponse(BaseModel):
     id: str

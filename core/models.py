@@ -3,6 +3,8 @@ import uuid
 from decimal import Decimal
 from sqlalchemy import Column, String, Numeric, DateTime, ForeignKey, Text, Integer, Index
 from sqlalchemy.orm import relationship
+from sqlalchemy import UniqueConstraint, Boolean
+
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -57,6 +59,7 @@ class User(Base):
     )
 
     transactions = relationship("Transaction", back_populates="user")
+    allow_non_friend_messages = Column(Boolean, default=True)
 
 
 class Challenge(Base):
@@ -97,6 +100,9 @@ class Game(Base):
     black_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
 
     stake = Column(Numeric(12, 2), nullable=False)
+    premove_white = Column(Text, nullable=True) 
+    premove_black = Column(Text, nullable=True)
+
 
     status = Column(String, default="ONGOING", index=True)
     result = Column(String, nullable=True)
@@ -162,4 +168,57 @@ class Transaction(Base):
         Index("ix_transactions_withdrawals_reference", "reference", postgresql_where=(type == "WITHDRAWAL")),
         Index("ix_transactions_withdrawals_status_created", "status", "created_at", postgresql_where=(type == "WITHDRAWAL")),
     )
+
+class FriendRequest(Base):
+    __tablename__ = "friend_requests"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+
+    requester_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    addressee_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+
+    # PENDING | ACCEPTED | REJECTED
+    status = Column(String, default="PENDING", nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("requester_id", "addressee_id", name="uq_friend_request_pair"),
+    )
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    user1_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    user2_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_message_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("user1_id", "user2_id", name="uq_conversation_pair"),
+    )
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+
+    conversation_id = Column(String(36), ForeignKey("conversations.id"), nullable=False, index=True)
+
+    sender_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    recipient_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+
+    content = Column(Text, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    read_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    
+    deleted_by_sender = Column(Boolean, default=False)
+    deleted_by_recipient = Column(Boolean, default=False)
+
 

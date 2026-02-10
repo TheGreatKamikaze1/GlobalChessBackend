@@ -14,6 +14,10 @@ from stats.main import router as stats_router
 from payment_service.app.api.routes.paystack import router as payment_router
 from users.users import router as users_router
 from tournaments.router import router as tournaments_router
+from social.search import router as search_router
+from social.friends import router as friends_router
+from social.chat import router as chat_router
+
 
 from sockets.game_socket import game_socket
 
@@ -51,6 +55,11 @@ app.include_router(transaction_router, prefix="/api/transactions", tags=["Transa
 app.include_router(users_router, prefix="/api/users", tags=["Users"])
 app.include_router(stats_router, prefix="/api/stats", tags=["Statistics"])
 app.include_router(payment_router, prefix="/api/payments")
+app.include_router(search_router)
+app.include_router(friends_router)
+app.include_router(chat_router)
+
+
 
 app.include_router(tournaments_router, prefix="/api/tournaments", tags=["Tournaments"])
 

@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Literal
 
 
 class CreateChallengeSchema(BaseModel):
-    stake: float = Field(..., gt=0, description="The amount staked in the challenge.")
+    stake: float = Field(..., ge=0, description="The amount staked in the challenge.")
     time_control: str = Field(
         "60/0",
         description="Time control format (e.g., '60/0' for 60 minutes no increment).",

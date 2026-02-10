@@ -5,7 +5,6 @@ from core.models import Game, User
 from datetime import datetime, timezone
 import re
 
-
 _UCI_RE = re.compile(r"^[a-h][1-8][a-h][1-8][qrbn]?$", re.IGNORECASE)
 
 
@@ -17,16 +16,58 @@ def _load_moves(game: Game) -> list[str]:
 
 
 def _starting_fen(game: Game) -> str:
-    # Safe fallback if DB has NULL/empty fen for newly created games
     fen = (game.current_fen or "").strip()
     return fen if fen else chess.STARTING_FEN
 
 
+def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None, str | None]:
+    """
+    Try to apply premove for the side whose turn it is NOW.
+    Returns (applied, uci, san). Clears premove if illegal/invalid/used.
+    """
+    side_to_move = board.turn  # IMPORTANT: store before push
+
+    premove = game.premove_white if side_to_move == chess.WHITE else game.premove_black
+    if not premove:
+        return (False, None, None)
+
+    premove = premove.strip().lower()
+
+    try:
+        mv = chess.Move.from_uci(premove)
+
+        if mv not in board.legal_moves:
+            # clear illegal premove for that side
+            if side_to_move == chess.WHITE:
+                game.premove_white = None
+            else:
+                game.premove_black = None
+            return (False, None, None)
+
+        san = board.san(mv)
+        board.push(mv)
+
+        # clear used premove for that side (NOT based on board.turn after push)
+        if side_to_move == chess.WHITE:
+            game.premove_white = None
+        else:
+            game.premove_black = None
+
+        return (True, premove, san)
+
+    except Exception:
+        # invalid stored premove => clear it
+        if side_to_move == chess.WHITE:
+            game.premove_white = None
+        else:
+            game.premove_black = None
+        return (False, None, None)
+
+
 def _parse_move(board: chess.Board, move_text: str) -> tuple[chess.Move, str, str]:
-   
     s = move_text.strip()
 
-    # If it looks like UCI, try UCI first
+    # Try UCI first
     if _UCI_RE.match(s):
         try:
             mv = chess.Move.from_uci(s.lower())
@@ -35,7 +76,6 @@ def _parse_move(board: chess.Board, move_text: str) -> tuple[chess.Move, str, st
             san = board.san(mv)
             return mv, mv.uci(), san
         except Exception:
-          
             pass
 
     # Try SAN
@@ -48,7 +88,7 @@ def _parse_move(board: chess.Board, move_text: str) -> tuple[chess.Move, str, st
         raise ValueError("invalid_format")
 
 
-def process_move(db: Session, game_id: str, user_id: int, move_text: str):
+def process_move(db: Session, game_id: str, user_id: str, move_text: str):
     game = db.query(Game).filter(Game.id == game_id).with_for_update().first()
 
     if not game:
@@ -61,7 +101,6 @@ def process_move(db: Session, game_id: str, user_id: int, move_text: str):
         return {"error": "NOT_PARTICIPANT"}
 
     board = chess.Board(_starting_fen(game))
-
     is_white_player = (user_id == game.white_id)
 
     # enforce turn
@@ -74,15 +113,27 @@ def process_move(db: Session, game_id: str, user_id: int, move_text: str):
     except ValueError:
         return {"error": "INVALID_FORMAT_OR_ILLEGAL"}
 
-    # apply move
-    board.push(move)
-
     moves_list = _load_moves(game)
+
+    # apply player's move
+    board.push(move)
     moves_list.append(uci)
 
+    premove_applied = False
+    premove_uci = None
+    premove_san = None
+
+    # ✅ Only attempt premove if game not already over
+    if not board.is_game_over():
+        premove_applied, premove_uci, premove_san = _try_apply_premove(game, board)
+        if premove_applied and premove_uci:
+            moves_list.append(premove_uci)
+
+    # update final position + moves (after premove attempt)
     game.current_fen = board.fen()
     game.moves = json.dumps(moves_list)
 
+    # recompute after premove
     is_check = board.is_check()
     is_checkmate = board.is_checkmate()
     game_over = board.is_game_over()
@@ -97,37 +148,41 @@ def process_move(db: Session, game_id: str, user_id: int, move_text: str):
             "isCheck": is_check,
             "isCheckmate": is_checkmate,
             "gameOver": False,
+            "premoveApplied": premove_applied,
+            "premoveUci": premove_uci,
+            "premoveSan": premove_san,
         }
 
-    # --- GAME OVER HANDLING ---
+    # GAME OVER HANDLING
     game.status = "COMPLETED"
     game.completed_at = datetime.now(timezone.utc)
 
+    stake = float(game.stake or 0)
     winner_id = None
-    result = None
 
     if is_checkmate:
-        
+        # after checkmate, board.turn is the side that is checkmated (to move but cannot)
         if board.turn == chess.WHITE:
             winner_id = game.black_id
-            result = "BLACK_WIN"
+            game.result = "BLACK_WIN"
         else:
             winner_id = game.white_id
-            result = "WHITE_WIN"
+            game.result = "WHITE_WIN"
 
-        game.result = result
         game.winner_id = winner_id
 
-        winner = db.query(User).filter(User.id == winner_id).with_for_update().first()
-        if winner:
-            winner.balance += (game.stake * 2)
+        # payout only for paid games
+        if stake > 0 and winner_id:
+            winner = db.query(User).filter(User.id == winner_id).with_for_update().first()
+            if winner:
+                winner.balance += (game.stake * 2)
     else:
-        # draw (stalemate, repetition, insufficient material, etc.)
         game.result = "DRAW"
-        db.query(User).filter(User.id.in_([game.white_id, game.black_id])).update(
-            {User.balance: User.balance + game.stake},
-            synchronize_session=False,
-        )
+        if stake > 0:
+            db.query(User).filter(User.id.in_([game.white_id, game.black_id])).update(
+                {User.balance: User.balance + game.stake},
+                synchronize_session=False,
+            )
 
     db.commit()
 
@@ -141,4 +196,7 @@ def process_move(db: Session, game_id: str, user_id: int, move_text: str):
         "gameOver": True,
         "result": game.result,
         "winnerId": winner_id,
+        "premoveApplied": premove_applied,
+        "premoveUci": premove_uci,
+        "premoveSan": premove_san,
     }

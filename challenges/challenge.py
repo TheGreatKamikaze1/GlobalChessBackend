@@ -13,7 +13,7 @@ from challenges.challenge_schema import (
     ChallengeList,
     UserMini,
 )
-from game_management.dependencies import get_current_user_id_dep  
+from game_management.dependencies import get_current_user_id_dep
 
 router = APIRouter(tags=["Challenges"])
 
@@ -29,40 +29,44 @@ def orm_user_mini(user: User) -> dict:
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_challenge(
     req: CreateChallengeSchema,
-    user_id: int = Depends(get_current_user_id_dep),
+    user_id: str = Depends(get_current_user_id_dep),
     db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.id == user_id).with_for_update().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if user.balance < req.stake:
+    stake = float(req.stake or 0)
+
+    
+    if stake > 0 and float(user.balance or 0) < stake:
         raise HTTPException(
             status_code=400,
             detail={"code": "INSUFFICIENT_BALANCE", "message": "Insufficient balance"},
         )
 
-   
-   
     now = datetime.now(timezone.utc)
-    open_total = (
-        db.query(func.coalesce(func.sum(Challenge.stake), 0))
-        .filter(
-            Challenge.creator_id == user_id,
-            Challenge.status == "OPEN",
-            Challenge.expires_at > now,
-        )
-        .scalar()
-    )
 
-    if float(open_total) + float(req.stake) > float(user.balance):
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "STAKE_OVERCOMMIT",
-                "message": "You already have open challenges that reserve your available balance.",
-            },
+   
+    if stake > 0:
+        open_total = (
+            db.query(func.coalesce(func.sum(Challenge.stake), 0))
+            .filter(
+                Challenge.creator_id == user_id,
+                Challenge.status == "OPEN",
+                Challenge.expires_at > now,
+            )
+            .scalar()
         )
+
+        if float(open_total) + stake > float(user.balance or 0):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "STAKE_OVERCOMMIT",
+                    "message": "You already have open challenges that reserve your available balance.",
+                },
+            )
 
     expires_at = now + timedelta(hours=1)
 
@@ -101,7 +105,7 @@ async def get_available_challenges(
 ):
     now = datetime.now(timezone.utc)
 
-   
+    # expire old ones
     db.query(Challenge).filter(
         Challenge.status == "OPEN",
         Challenge.expires_at <= now,
@@ -114,7 +118,12 @@ async def get_available_challenges(
     )
 
     total = base_query.count()
-    challenges = base_query.order_by(Challenge.created_at.desc()).offset(offset).limit(limit).all()
+    challenges = (
+        base_query.order_by(Challenge.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
     data = [
         AvailableChallenge(
@@ -140,7 +149,7 @@ async def get_available_challenges(
 @router.post("/{challenge_id}/accept")
 async def accept_challenge(
     challenge_id: str,
-    user_id: int = Depends(get_current_user_id_dep),
+    user_id: str = Depends(get_current_user_id_dep),
     db: Session = Depends(get_db),
 ):
     try:
@@ -161,10 +170,10 @@ async def accept_challenge(
         if challenge.expires_at <= now:
             raise HTTPException(status_code=400, detail="Challenge expired")
 
-        if int(challenge.creator_id) == int(user_id):
+       
+        if str(challenge.creator_id) == str(user_id):
             raise HTTPException(status_code=400, detail="Cannot accept your own challenge")
 
-        # Idempotency: if a game already exists for this challenge, return it
         existing_game = db.query(Game).filter(Game.challenge_id == challenge.id).first()
         if existing_game:
             return {
@@ -176,18 +185,26 @@ async def accept_challenge(
                 },
             }
 
-        creator = db.query(User).filter(User.id == challenge.creator_id).with_for_update().first()
+        creator = (
+            db.query(User)
+            .filter(User.id == challenge.creator_id)
+            .with_for_update()
+            .first()
+        )
         acceptor = db.query(User).filter(User.id == user_id).with_for_update().first()
 
         if not creator or not acceptor:
             raise HTTPException(status_code=404, detail="User not found")
 
-        if float(creator.balance) < float(challenge.stake) or float(acceptor.balance) < float(challenge.stake):
-            raise HTTPException(status_code=400, detail="Insufficient balance")
+        stake = float(challenge.stake or 0)
 
-        # ESCROW (deduct both)
-        creator.balance -= challenge.stake
-        acceptor.balance -= challenge.stake
+       
+        if stake > 0:
+            if float(creator.balance or 0) < stake or float(acceptor.balance or 0) < stake:
+                raise HTTPException(status_code=400, detail="Insufficient balance")
+
+            creator.balance -= challenge.stake
+            acceptor.balance -= challenge.stake
 
         # COLOR ASSIGNMENT
         color_pref = getattr(challenge, "color_preference", "auto") or "auto"
@@ -214,7 +231,7 @@ async def accept_challenge(
             status="ONGOING",
             current_fen=chess.STARTING_FEN,
             moves="[]",
-            started_at=now,  # if your Game model doesn't have started_at, remove this line
+            started_at=now,
         )
 
         challenge.status = "ACCEPTED"
