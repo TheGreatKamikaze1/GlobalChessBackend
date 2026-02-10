@@ -2,11 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from datetime import datetime, timezone
+import uuid
 
 from core.database import get_db
 from core.models import User, FriendRequest
 from core.auth import get_current_user
-from social.schemas import UserMiniOut, FriendRequestOut, FriendsListResponse
+from social.schemas import UserMiniOut, FriendsListResponse
 
 router = APIRouter(prefix="/api/friends", tags=["Friends"])
 
@@ -35,11 +36,16 @@ def send_friend_request(
         raise HTTPException(status_code=404, detail="User not found")
 
     # If there's an incoming pending request from target -> current user, auto-accept it
-    reverse = db.query(FriendRequest).filter(
-        FriendRequest.requester_id == target_user_id,
-        FriendRequest.addressee_id == current_user.id,
-        FriendRequest.status == "PENDING",
-    ).with_for_update().first()
+    reverse = (
+        db.query(FriendRequest)
+        .filter(
+            FriendRequest.requester_id == str(target_user_id),
+            FriendRequest.addressee_id == str(current_user.id),
+            FriendRequest.status == "PENDING",
+        )
+        .with_for_update()
+        .first()
+    )
 
     if reverse:
         reverse.status = "ACCEPTED"
@@ -47,19 +53,39 @@ def send_friend_request(
         db.commit()
         return {"success": True, "message": "Friend request accepted (auto)"}
 
-    existing = db.query(FriendRequest).filter(
-        FriendRequest.requester_id == current_user.id,
-        FriendRequest.addressee_id == target_user_id,
-    ).first()
+    # Check if there is already a request from current -> target
+    existing = (
+        db.query(FriendRequest)
+        .filter(
+            FriendRequest.requester_id == str(current_user.id),
+            FriendRequest.addressee_id == str(target_user_id),
+        )
+        .with_for_update()
+        .first()
+    )
 
     if existing:
-        return {"success": True, "message": f"Request already {existing.status.lower()}"}
+        # ✅ if declined/rejected, delete old row then create a fresh one
+        if existing.status in ("REJECTED", "DECLINED"):
+            db.delete(existing)
+            db.commit()
+        elif existing.status == "PENDING":
+            return {"success": True, "message": "Request already pending"}
+        elif existing.status == "ACCEPTED":
+            return {"success": True, "message": "Already friends"}
+        else:
+            # any other status (CANCELLED/BLOCKED/etc)
+            return {"success": True, "message": f"Request already {existing.status.lower()}"}
 
     fr = FriendRequest(
+        id=str(uuid.uuid4()),
         requester_id=str(current_user.id),
         addressee_id=str(target_user_id),
         status="PENDING",
+        created_at=datetime.now(timezone.utc),
+        updated_at=None,
     )
+
     db.add(fr)
     db.commit()
     db.refresh(fr)
@@ -106,6 +132,7 @@ def reject_friend_request(
     if fr.status != "PENDING":
         return {"success": True, "message": f"Already {fr.status.lower()}"}
 
+    # keep REJECTED (works with your DB). If you prefer DECLINED, change this string.
     fr.status = "REJECTED"
     fr.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -118,10 +145,15 @@ def incoming_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    reqs = db.query(FriendRequest).filter(
-        FriendRequest.addressee_id == current_user.id,
-        FriendRequest.status == "PENDING",
-    ).order_by(FriendRequest.created_at.desc()).all()
+    reqs = (
+        db.query(FriendRequest)
+        .filter(
+            FriendRequest.addressee_id == str(current_user.id),
+            FriendRequest.status == "PENDING",
+        )
+        .order_by(FriendRequest.created_at.desc())
+        .all()
+    )
 
     users_map = {}
     out = []
@@ -130,15 +162,16 @@ def incoming_requests(
         if r.requester_id not in users_map:
             users_map[r.requester_id] = db.query(User).filter(User.id == r.requester_id).first()
         requester = users_map[r.requester_id]
-        addressee = current_user
 
-        out.append({
-            "id": str(r.id),
-            "status": r.status,
-            "createdAt": r.created_at,
-            "requester": _mini(requester) if requester else None,
-            "addressee": _mini(addressee),
-        })
+        out.append(
+            {
+                "id": str(r.id),
+                "status": r.status,
+                "createdAt": r.created_at,
+                "requester": _mini(requester) if requester else None,
+                "addressee": _mini(current_user),
+            }
+        )
 
     return {"success": True, "data": out}
 
@@ -148,10 +181,15 @@ def outgoing_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    reqs = db.query(FriendRequest).filter(
-        FriendRequest.requester_id == current_user.id,
-        FriendRequest.status == "PENDING",
-    ).order_by(FriendRequest.created_at.desc()).all()
+    reqs = (
+        db.query(FriendRequest)
+        .filter(
+            FriendRequest.requester_id == str(current_user.id),
+            FriendRequest.status == "PENDING",
+        )
+        .order_by(FriendRequest.created_at.desc())
+        .all()
+    )
 
     users_map = {}
     out = []
@@ -161,13 +199,15 @@ def outgoing_requests(
             users_map[r.addressee_id] = db.query(User).filter(User.id == r.addressee_id).first()
         addressee = users_map[r.addressee_id]
 
-        out.append({
-            "id": str(r.id),
-            "status": r.status,
-            "createdAt": r.created_at,
-            "requester": _mini(current_user),
-            "addressee": _mini(addressee) if addressee else None,
-        })
+        out.append(
+            {
+                "id": str(r.id),
+                "status": r.status,
+                "createdAt": r.created_at,
+                "requester": _mini(current_user),
+                "addressee": _mini(addressee) if addressee else None,
+            }
+        )
 
     return {"success": True, "data": out}
 
@@ -180,8 +220,8 @@ def get_friends(
     accepted = db.query(FriendRequest).filter(
         FriendRequest.status == "ACCEPTED",
         or_(
-            FriendRequest.requester_id == current_user.id,
-            FriendRequest.addressee_id == current_user.id,
+            FriendRequest.requester_id == str(current_user.id),
+            FriendRequest.addressee_id == str(current_user.id),
         ),
     ).all()
 
@@ -197,3 +237,32 @@ def get_friends(
     data = [_mini(u) for u in friends]
 
     return {"success": True, "data": data}
+
+@router.post("/cancel/{request_id}")
+def cancel_friend_request(
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    fr = (
+        db.query(FriendRequest)
+        .filter(FriendRequest.id == request_id)
+        .with_for_update()
+        .first()
+    )
+    if not fr:
+        raise HTTPException(status_code=404, detail="Friend request not found")
+
+   
+    if str(fr.requester_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+
+    if fr.status != "PENDING":
+        return {"success": True, "message": f"Cannot cancel because it's {fr.status.lower()}"}
+
+   
+    db.delete(fr)
+    db.commit()
+
+    return {"success": True, "message": "Friend request cancelled"}
