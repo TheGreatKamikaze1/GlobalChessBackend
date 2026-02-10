@@ -47,9 +47,7 @@ def _are_friends(db: Session, a: str, b: str) -> bool:
 
 
 def _visible_for_user_filter(user_id: str):
-    # message visible if:
-    # - user is sender and not deleted_by_sender
-    # - user is recipient and not deleted_by_recipient
+
     return or_(
         and_(Message.sender_id == user_id, Message.deleted_by_sender.is_(False)),
         and_(Message.recipient_id == user_id, Message.deleted_by_recipient.is_(False)),
@@ -119,7 +117,7 @@ def send_message(
     if not recipient:
         raise HTTPException(status_code=404, detail="Recipient not found")
 
-    # ✅ Privacy: allow/disallow non-friend DMs
+   
     allow_non_friends = bool(getattr(recipient, "allow_non_friend_messages", True))
     if not allow_non_friends and not _are_friends(db, str(current_user.id), str(recipient.id)):
         raise HTTPException(status_code=403, detail="This user only allows messages from friends")

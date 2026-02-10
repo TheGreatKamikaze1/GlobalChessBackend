@@ -35,7 +35,7 @@ def send_friend_request(
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # If there's an incoming pending request from target -> current user, auto-accept it
+    
     reverse = (
         db.query(FriendRequest)
         .filter(
@@ -53,7 +53,7 @@ def send_friend_request(
         db.commit()
         return {"success": True, "message": "Friend request accepted (auto)"}
 
-    # Check if there is already a request from current -> target
+    
     existing = (
         db.query(FriendRequest)
         .filter(
@@ -65,7 +65,7 @@ def send_friend_request(
     )
 
     if existing:
-        # ✅ if declined/rejected, delete old row then create a fresh one
+        
         if existing.status in ("REJECTED", "DECLINED"):
             db.delete(existing)
             db.commit()
@@ -74,7 +74,7 @@ def send_friend_request(
         elif existing.status == "ACCEPTED":
             return {"success": True, "message": "Already friends"}
         else:
-            # any other status (CANCELLED/BLOCKED/etc)
+          
             return {"success": True, "message": f"Request already {existing.status.lower()}"}
 
     fr = FriendRequest(
@@ -132,7 +132,7 @@ def reject_friend_request(
     if fr.status != "PENDING":
         return {"success": True, "message": f"Already {fr.status.lower()}"}
 
-    # keep REJECTED (works with your DB). If you prefer DECLINED, change this string.
+  
     fr.status = "REJECTED"
     fr.updated_at = datetime.now(timezone.utc)
     db.commit()

@@ -21,11 +21,8 @@ def _starting_fen(game: Game) -> str:
 
 
 def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None, str | None]:
-    """
-    Try to apply premove for the side whose turn it is NOW.
-    Returns (applied, uci, san). Clears premove if illegal/invalid/used.
-    """
-    side_to_move = board.turn  # IMPORTANT: store before push
+   
+    side_to_move = board.turn 
 
     premove = game.premove_white if side_to_move == chess.WHITE else game.premove_black
     if not premove:
@@ -37,7 +34,7 @@ def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None
         mv = chess.Move.from_uci(premove)
 
         if mv not in board.legal_moves:
-            # clear illegal premove for that side
+            
             if side_to_move == chess.WHITE:
                 game.premove_white = None
             else:
@@ -47,7 +44,7 @@ def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None
         san = board.san(mv)
         board.push(mv)
 
-        # clear used premove for that side (NOT based on board.turn after push)
+       
         if side_to_move == chess.WHITE:
             game.premove_white = None
         else:
@@ -115,7 +112,6 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
 
     moves_list = _load_moves(game)
 
-    # apply player's move
     board.push(move)
     moves_list.append(uci)
 
@@ -123,13 +119,13 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
     premove_uci = None
     premove_san = None
 
-    # ✅ Only attempt premove if game not already over
+  
     if not board.is_game_over():
         premove_applied, premove_uci, premove_san = _try_apply_premove(game, board)
         if premove_applied and premove_uci:
             moves_list.append(premove_uci)
 
-    # update final position + moves (after premove attempt)
+  
     game.current_fen = board.fen()
     game.moves = json.dumps(moves_list)
 
@@ -161,7 +157,7 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
     winner_id = None
 
     if is_checkmate:
-        # after checkmate, board.turn is the side that is checkmated (to move but cannot)
+       
         if board.turn == chess.WHITE:
             winner_id = game.black_id
             game.result = "BLACK_WIN"
@@ -171,7 +167,7 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
 
         game.winner_id = winner_id
 
-        # payout only for paid games
+        
         if stake > 0 and winner_id:
             winner = db.query(User).filter(User.id == winner_id).with_for_update().first()
             if winner:
