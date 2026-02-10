@@ -16,3 +16,4 @@ pydantic-settings>=2.0
 celery
 redis
 apscheduler
+firebase-admin>=7.0.0
