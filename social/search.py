@@ -1,39 +1,53 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from pydantic import BaseModel
+from typing import List, Optional, Dict
 
 from core.database import get_db
 from core.models import User
-from core.auth import get_current_user
-from social.schemas import SearchUsersResponse, UserMiniOut
 
-router = APIRouter(prefix="/api/users", tags=["Search"])
+router = APIRouter(prefix="/api/search", tags=["Search"])
 
 
-@router.get("/search", response_model=SearchUsersResponse)
+class SearchUserOut(BaseModel):
+    id: str
+    username: str
+    displayName: str
+    avatarUrl: Optional[str] = None
+    rating: int
+
+
+class SearchUsersResponse(BaseModel):
+    success: bool = True
+    data: List[SearchUserOut]
+    pagination: Dict[str, int]
+
+
+@router.get("/users", response_model=SearchUsersResponse)
 def search_users(
-    q: str = Query(..., min_length=1, max_length=50),
-    limit: int = Query(20, ge=1, le=50),
-    offset: int = Query(0, ge=0),
+    q: str = Query(..., min_length=1, description="Search text (username or display name)"),
+    limit: int = Query(20, ge=1, le=50, description="Max results (1-50)"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    term = q.strip()
-    pattern = f"%{term}%"
-
     base = db.query(User).filter(
-        User.id != current_user.id,
         or_(
-            User.username.ilike(pattern),
-            User.display_name.ilike(pattern),
-        ),
+            User.username.ilike(f"%{q}%"),
+            User.display_name.ilike(f"%{q}%"),
+        )
     )
 
     total = base.count()
-    users = base.order_by(User.username.asc()).offset(offset).limit(limit).all()
+    users = (
+        base.order_by(User.username.asc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
     data = [
-        UserMiniOut(
+        SearchUserOut(
             id=str(u.id),
             username=u.username,
             displayName=u.display_name,
