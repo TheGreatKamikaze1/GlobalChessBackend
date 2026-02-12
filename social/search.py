@@ -7,6 +7,7 @@ from typing import List, Optional, Dict
 from core.database import get_db
 from core.models import User
 
+
 router = APIRouter(prefix="/api/search", tags=["Search"])
 
 
@@ -26,9 +27,25 @@ class SearchUsersResponse(BaseModel):
 
 @router.get("/users", response_model=SearchUsersResponse)
 def search_users(
-    q: str = Query(..., min_length=1, description="Search term (username or display name)", example="nze"),
-    limit: int = Query(20, ge=1, le=50, description="Number of results to return (1-50)", example=20),
-    offset: int = Query(0, ge=0, description="How many results to skip (pagination)", example=0),
+    q: str = Query(
+        ...,
+        min_length=1,
+        description="Search term (username or display name)",
+        examples={"sample": {"summary": "Example search", "value": "nze"}},
+    ),
+    limit: int = Query(
+        20,
+        ge=1,
+        le=50,
+        description="Number of results to return (1-50)",
+        examples={"sample": {"summary": "Example limit", "value": 20}},
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="How many results to skip (pagination)",
+        examples={"sample": {"summary": "Example offset", "value": 0}},
+    ),
     db: Session = Depends(get_db),
 ):
     base = db.query(User).filter(
