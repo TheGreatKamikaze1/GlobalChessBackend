@@ -1,4 +1,4 @@
-# main.py (core backend root)
+
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -59,9 +59,6 @@ app.include_router(payment_router, prefix="/api/payments")
 app.include_router(search_router)
 app.include_router(friends_router)
 app.include_router(chat_router)
-
-
-
 app.include_router(tournaments_router, prefix="/api/tournaments", tags=["Tournaments"])
 
 
