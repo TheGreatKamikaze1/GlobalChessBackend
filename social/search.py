@@ -26,9 +26,9 @@ class SearchUsersResponse(BaseModel):
 
 @router.get("/users", response_model=SearchUsersResponse)
 def search_users(
-    q: str = Query(..., min_length=1, description="Search text (username or display name)"),
-    limit: int = Query(20, ge=1, le=50, description="Max results (1-50)"),
-    offset: int = Query(0, ge=0, description="Pagination offset"),
+    q: str = Query(..., min_length=1, description="Search term (username or display name)", example="nze"),
+    limit: int = Query(20, ge=1, le=50, description="Number of results to return (1-50)", example=20),
+    offset: int = Query(0, ge=0, description="How many results to skip (pagination)", example=0),
     db: Session = Depends(get_db),
 ):
     base = db.query(User).filter(
