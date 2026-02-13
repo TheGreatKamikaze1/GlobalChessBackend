@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Literal
 from datetime import datetime
 
 
@@ -17,17 +17,38 @@ class SearchUsersResponse(BaseModel):
     pagination: dict
 
 
+FriendRequestStatus = Literal["PENDING", "ACCEPTED", "REJECTED", "DECLINED"]
+
+
 class FriendRequestOut(BaseModel):
     id: str
-    status: str
+    status: FriendRequestStatus
     createdAt: datetime
-    requester: UserMiniOut
-    addressee: UserMiniOut
+    requester: Optional[UserMiniOut] = None
+    addressee: Optional[UserMiniOut] = None
+
+
+class FriendRequestsResponse(BaseModel):
+    success: bool = True
+    data: List[FriendRequestOut]
 
 
 class FriendsListResponse(BaseModel):
     success: bool = True
     data: List[UserMiniOut]
+
+
+class BasicMessageResponse(BaseModel):
+    success: bool = True
+    message: str
+
+
+class SendFriendRequestResponse(BaseModel):
+    success: bool = True
+    message: str
+    requestId: Optional[str] = None
+
+
 
 
 class SendMessageRequest(BaseModel):
@@ -62,6 +83,7 @@ class MessagesResponse(BaseModel):
     success: bool = True
     data: List[MessageOut]
     pagination: dict
+
 
 class ChatSettingsData(BaseModel):
     allowNonFriendMessages: bool

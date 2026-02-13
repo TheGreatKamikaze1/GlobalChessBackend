@@ -7,7 +7,15 @@ import uuid
 from core.database import get_db
 from core.models import User, FriendRequest
 from core.auth import get_current_user
-from social.schemas import UserMiniOut, FriendsListResponse
+
+from social.schemas import (
+    UserMiniOut,
+    FriendsListResponse,
+    FriendRequestsResponse,
+    FriendRequestOut,
+    BasicMessageResponse,
+    SendFriendRequestResponse,
+)
 
 router = APIRouter(prefix="/api/friends", tags=["Friends"])
 
@@ -22,7 +30,7 @@ def _mini(u: User) -> UserMiniOut:
     )
 
 
-@router.post("/request/{target_user_id}")
+@router.post("/request/{target_user_id}", response_model=SendFriendRequestResponse)
 def send_friend_request(
     target_user_id: str,
     db: Session = Depends(get_db),
@@ -35,25 +43,28 @@ def send_friend_request(
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
 
-    
+   
     reverse = (
         db.query(FriendRequest)
         .filter(
             FriendRequest.requester_id == str(target_user_id),
             FriendRequest.addressee_id == str(current_user.id),
-            FriendRequest.status == "PENDING",
         )
         .with_for_update()
         .first()
     )
 
-    if reverse:
+    if reverse and reverse.status == "PENDING":
         reverse.status = "ACCEPTED"
         reverse.updated_at = datetime.now(timezone.utc)
         db.commit()
-        return {"success": True, "message": "Friend request accepted (auto)"}
+        return {
+            "success": True,
+            "message": "Friend request accepted (auto)",
+            "requestId": str(reverse.id),
+        }
 
-    
+  
     existing = (
         db.query(FriendRequest)
         .filter(
@@ -65,17 +76,16 @@ def send_friend_request(
     )
 
     if existing:
-        
+       
         if existing.status in ("REJECTED", "DECLINED"):
             db.delete(existing)
             db.commit()
         elif existing.status == "PENDING":
-            return {"success": True, "message": "Request already pending"}
+            return {"success": True, "message": "Request already pending", "requestId": str(existing.id)}
         elif existing.status == "ACCEPTED":
-            return {"success": True, "message": "Already friends"}
+            return {"success": True, "message": "Already friends", "requestId": str(existing.id)}
         else:
-          
-            return {"success": True, "message": f"Request already {existing.status.lower()}"}
+            return {"success": True, "message": f"Request already {existing.status.lower()}", "requestId": str(existing.id)}
 
     fr = FriendRequest(
         id=str(uuid.uuid4()),
@@ -93,13 +103,18 @@ def send_friend_request(
     return {"success": True, "message": "Friend request sent", "requestId": str(fr.id)}
 
 
-@router.post("/accept/{request_id}")
+@router.post("/accept/{request_id}", response_model=BasicMessageResponse)
 def accept_friend_request(
     request_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    fr = db.query(FriendRequest).filter(FriendRequest.id == request_id).with_for_update().first()
+    fr = (
+        db.query(FriendRequest)
+        .filter(FriendRequest.id == request_id)
+        .with_for_update()
+        .first()
+    )
     if not fr:
         raise HTTPException(status_code=404, detail="Friend request not found")
 
@@ -116,13 +131,18 @@ def accept_friend_request(
     return {"success": True, "message": "Friend request accepted"}
 
 
-@router.post("/reject/{request_id}")
+@router.post("/reject/{request_id}", response_model=BasicMessageResponse)
 def reject_friend_request(
     request_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    fr = db.query(FriendRequest).filter(FriendRequest.id == request_id).with_for_update().first()
+    fr = (
+        db.query(FriendRequest)
+        .filter(FriendRequest.id == request_id)
+        .with_for_update()
+        .first()
+    )
     if not fr:
         raise HTTPException(status_code=404, detail="Friend request not found")
 
@@ -132,7 +152,6 @@ def reject_friend_request(
     if fr.status != "PENDING":
         return {"success": True, "message": f"Already {fr.status.lower()}"}
 
-  
     fr.status = "REJECTED"
     fr.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -140,7 +159,7 @@ def reject_friend_request(
     return {"success": True, "message": "Friend request rejected"}
 
 
-@router.get("/requests/incoming")
+@router.get("/requests/incoming", response_model=FriendRequestsResponse)
 def incoming_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -164,19 +183,19 @@ def incoming_requests(
         requester = users_map[r.requester_id]
 
         out.append(
-            {
-                "id": str(r.id),
-                "status": r.status,
-                "createdAt": r.created_at,
-                "requester": _mini(requester) if requester else None,
-                "addressee": _mini(current_user),
-            }
+            FriendRequestOut(
+                id=str(r.id),
+                status=r.status,
+                createdAt=r.created_at,
+                requester=_mini(requester) if requester else None,
+                addressee=_mini(current_user),
+            )
         )
 
     return {"success": True, "data": out}
 
 
-@router.get("/requests/outgoing")
+@router.get("/requests/outgoing", response_model=FriendRequestsResponse)
 def outgoing_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -200,13 +219,13 @@ def outgoing_requests(
         addressee = users_map[r.addressee_id]
 
         out.append(
-            {
-                "id": str(r.id),
-                "status": r.status,
-                "createdAt": r.created_at,
-                "requester": _mini(current_user),
-                "addressee": _mini(addressee) if addressee else None,
-            }
+            FriendRequestOut(
+                id=str(r.id),
+                status=r.status,
+                createdAt=r.created_at,
+                requester=_mini(current_user),
+                addressee=_mini(addressee) if addressee else None,
+            )
         )
 
     return {"success": True, "data": out}
@@ -217,13 +236,17 @@ def get_friends(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    accepted = db.query(FriendRequest).filter(
-        FriendRequest.status == "ACCEPTED",
-        or_(
-            FriendRequest.requester_id == str(current_user.id),
-            FriendRequest.addressee_id == str(current_user.id),
-        ),
-    ).all()
+    accepted = (
+        db.query(FriendRequest)
+        .filter(
+            FriendRequest.status == "ACCEPTED",
+            or_(
+                FriendRequest.requester_id == str(current_user.id),
+                FriendRequest.addressee_id == str(current_user.id),
+            ),
+        )
+        .all()
+    )
 
     friend_ids = []
     for r in accepted:
@@ -234,11 +257,10 @@ def get_friends(
         return {"success": True, "data": []}
 
     friends = db.query(User).filter(User.id.in_(friend_ids)).all()
-    data = [_mini(u) for u in friends]
+    return {"success": True, "data": [_mini(u) for u in friends]}
 
-    return {"success": True, "data": data}
 
-@router.post("/cancel/{request_id}")
+@router.post("/cancel/{request_id}", response_model=BasicMessageResponse)
 def cancel_friend_request(
     request_id: str,
     db: Session = Depends(get_db),
@@ -253,15 +275,12 @@ def cancel_friend_request(
     if not fr:
         raise HTTPException(status_code=404, detail="Friend request not found")
 
-   
     if str(fr.requester_id) != str(current_user.id):
         raise HTTPException(status_code=403, detail="Not allowed")
-
 
     if fr.status != "PENDING":
         return {"success": True, "message": f"Cannot cancel because it's {fr.status.lower()}"}
 
-   
     db.delete(fr)
     db.commit()
 
