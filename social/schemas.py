@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Literal
 from datetime import datetime
 
 
+
 class UserMiniOut(BaseModel):
     id: str
     username: str
@@ -11,13 +12,31 @@ class UserMiniOut(BaseModel):
     rating: int = 1200
 
 
+
+FriendStatus = Literal["none", "incoming", "outgoing", "friends"]
+FriendRequestStatus = Literal["PENDING", "ACCEPTED", "REJECTED", "DECLINED"]
+
+
+class FriendStatusData(BaseModel):
+    userId: str
+    status: FriendStatus
+
+
+class FriendStatusResponse(BaseModel):
+    success: bool = True
+    data: FriendStatusData
+
+
+
+class SearchUserOut(UserMiniOut):
+    friendStatus: FriendStatus = "none"
+
+
 class SearchUsersResponse(BaseModel):
     success: bool = True
-    data: List[UserMiniOut]
-    pagination: dict
+    data: List[SearchUserOut]
+    pagination: Dict[str, int]
 
-
-FriendRequestStatus = Literal["PENDING", "ACCEPTED", "REJECTED", "DECLINED"]
 
 
 class FriendRequestOut(BaseModel):
@@ -47,7 +66,6 @@ class SendFriendRequestResponse(BaseModel):
     success: bool = True
     message: str
     requestId: Optional[str] = None
-
 
 
 
