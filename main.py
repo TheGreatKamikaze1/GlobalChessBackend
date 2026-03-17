@@ -17,8 +17,7 @@ from tournaments.router import router as tournaments_router
 from social.search import router as search_router
 from social.friends import router as friends_router
 from social.chat import router as chat_router
-
-
+from sockets.voice_chat import voice_router
 from sockets.game_socket import game_socket
 
 
@@ -60,6 +59,7 @@ app.include_router(search_router)
 app.include_router(friends_router)
 app.include_router(chat_router)
 app.include_router(tournaments_router, prefix="/api/tournaments", tags=["Tournaments"])
+app.include_router(voice_router)
 
 
 @app.websocket("/ws/game")

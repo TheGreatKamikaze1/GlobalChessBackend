@@ -105,7 +105,7 @@ async def get_available_challenges(
 ):
     now = datetime.now(timezone.utc)
 
-    # expire old ones
+    
     db.query(Challenge).filter(
         Challenge.status == "OPEN",
         Challenge.expires_at <= now,

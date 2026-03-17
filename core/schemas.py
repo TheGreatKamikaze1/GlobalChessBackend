@@ -8,7 +8,7 @@ class UserResponse(BaseModel):
     username: str
     displayName: str
 
-    # pydantic v2
+   
     model_config = {"from_attributes": True}
 
     class Config:

@@ -53,7 +53,7 @@ def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None
         return (True, premove, san)
 
     except Exception:
-        # invalid stored premove => clear it
+        
         if side_to_move == chess.WHITE:
             game.premove_white = None
         else:
@@ -64,7 +64,7 @@ def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None
 def _parse_move(board: chess.Board, move_text: str) -> tuple[chess.Move, str, str]:
     s = move_text.strip()
 
-    # Try UCI first
+   
     if _UCI_RE.match(s):
         try:
             mv = chess.Move.from_uci(s.lower())
@@ -75,7 +75,7 @@ def _parse_move(board: chess.Board, move_text: str) -> tuple[chess.Move, str, st
         except Exception:
             pass
 
-    # Try SAN
+    
     try:
         mv = board.parse_san(s)
         uci = mv.uci()
@@ -100,11 +100,11 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
     board = chess.Board(_starting_fen(game))
     is_white_player = (user_id == game.white_id)
 
-    # enforce turn
+    
     if (board.turn == chess.WHITE and not is_white_player) or (board.turn == chess.BLACK and is_white_player):
         return {"error": "NOT_YOUR_TURN"}
 
-    # parse + validate move
+  
     try:
         move, uci, san = _parse_move(board, move_text)
     except ValueError:
@@ -129,7 +129,7 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
     game.current_fen = board.fen()
     game.moves = json.dumps(moves_list)
 
-    # recompute after premove
+    
     is_check = board.is_check()
     is_checkmate = board.is_checkmate()
     game_over = board.is_game_over()
@@ -149,7 +149,7 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
             "premoveSan": premove_san,
         }
 
-    # GAME OVER HANDLING
+   
     game.status = "COMPLETED"
     game.completed_at = datetime.now(timezone.utc)
 

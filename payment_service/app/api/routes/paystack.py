@@ -172,7 +172,7 @@ async def paystack_webhook(
     )
 
     if not payment:
-    # If you want, you can still return 200 to avoid retries
+    
         return {"status": "not tracked"}
 
     if payment.verified:

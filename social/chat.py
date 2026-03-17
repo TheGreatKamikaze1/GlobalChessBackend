@@ -166,7 +166,7 @@ def delete_message(
 
     uid = str(current_user.id)
 
-    # Sender can delete for self OR everyone
+    
     if str(msg.sender_id) == uid:
         if forEveryone:
             msg.deleted_by_sender = True
@@ -178,7 +178,7 @@ def delete_message(
             db.commit()
             return {"success": True, "message": "Deleted for you"}
 
-    # Recipient can only delete for self
+    
     if str(msg.recipient_id) == uid:
         msg.deleted_by_recipient = True
         db.commit()
@@ -210,7 +210,7 @@ def list_conversations(
         other_id = c.user2_id if str(c.user1_id) == uid else c.user1_id
         other = db.query(User).filter(User.id == other_id).first()
 
-        # ✅ last visible message for this user
+        
         last_msg = (
             db.query(Message)
             .filter(Message.conversation_id == c.id)
