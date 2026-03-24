@@ -148,6 +148,7 @@ def auth_status(
     return {"success": True, "data": {"authenticated": True, "userId": user.id, "email": user.email}}
 
 
+@router.get("/{user_id}", response_model=PublicUserResponse)
 @router.get("/api/users/{user_id}", response_model=PublicUserResponse)
 def get_user_by_id(
     user_id: str,

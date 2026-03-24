@@ -102,7 +102,7 @@ def send_friend_request(
         db.commit()
         return {"success": True, "message": "Friend request accepted (auto)", "requestId": str(reverse.id)}
 
-    # Existing outgoing (me -> target)
+  
     existing = (
         db.query(FriendRequest)
         .filter(

@@ -14,7 +14,7 @@ if not JWT_SECRET:
 
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 def create_token(data: dict) -> str:
