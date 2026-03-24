@@ -7,6 +7,7 @@ from core.database import get_db
 from core.models import User
 from users.auth_schema import RegisterSchema, LoginSchema
 from core.auth import create_token
+from premium.service import get_membership_payload
 
 router = APIRouter(tags=["Auth"])
 
@@ -63,6 +64,7 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email or username already in use")
 
     token = create_token({"id": new_user.id, "email": new_user.email})
+    membership = get_membership_payload(db, new_user.id)
 
     return {
         "success": True,
@@ -75,10 +77,11 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
                 "name": new_user.name,
                 "bio": new_user.bio,
                 "avatarUrl": new_user.avatar_url,
-                "balance": float(new_user.balance or 0),
+                "balance": 0.0,
                 "rating": new_user.current_rating or 1200,
                 "createdAt": new_user.created_at,
                 "updatedAt": new_user.updated_at,
+                **membership,
             },
             "token": token,
         },
@@ -99,6 +102,7 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token({"id": user.id, "email": user.email})
+    membership = get_membership_payload(db, user.id)
 
     return {
         "success": True,
@@ -111,10 +115,11 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
                 "name": user.name,
                 "bio": user.bio,
                 "avatarUrl": user.avatar_url,
-                "balance": float(user.balance or 0),
+                "balance": 0.0,
                 "rating": user.current_rating or 1200,
                 "createdAt": user.created_at,
                 "updatedAt": user.updated_at,
+                **membership,
             },
             "token": token,
         },

@@ -1,20 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+from typing import Optional
 
-from core.database import get_db
-from core.models import User
-from users.users_schema import (
-    UpdateProfileSchema,
-    ProfileResponse,
-    MeResponse,
-    UpdateProfileResponse,
-    BalanceResponse,
-    AuthStatusResponse,
-)
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
 from core.auth import get_current_user_id
+from core.database import get_db
+from core.models import GiftTransfer, User
+from premium.service import get_membership_payload
+from users.users_schema import (
+    AuthStatusResponse,
+    BalanceResponse,
+    MeResponse,
+    ProfileResponse,
+    UpdateProfileResponse,
+    UpdateProfileSchema,
+)
 
 router = APIRouter(tags=["Users"])
 
@@ -27,11 +29,43 @@ class PublicUserData(BaseModel):
     avatarUrl: Optional[str] = None
     rating: int
     createdAt: Optional[datetime] = None
+    isPremium: bool = False
+    membershipTier: str = "standard"
 
 
 class PublicUserResponse(BaseModel):
     success: bool = True
     data: PublicUserData
+
+
+def _gift_counts(db: Session, user_id: str) -> dict:
+    sent_count = db.query(GiftTransfer).filter(GiftTransfer.sender_id == user_id).count()
+    received_count = db.query(GiftTransfer).filter(GiftTransfer.recipient_id == user_id).count()
+    return {
+        "sentGiftCount": sent_count,
+        "receivedGiftCount": received_count,
+    }
+
+
+def _profile_payload(db: Session, user: User) -> dict:
+    membership = get_membership_payload(db, str(user.id))
+    gift_counts = _gift_counts(db, str(user.id))
+
+    return {
+        "id": user.id,
+        "email": user.email,
+        "username": user.username,
+        "name": user.name,
+        "bio": user.bio,
+        "displayName": user.display_name,
+        "avatarUrl": user.avatar_url,
+        "balance": 0.0,
+        "rating": user.current_rating or 1200,
+        "createdAt": user.created_at,
+        "updatedAt": user.updated_at,
+        **membership,
+        **gift_counts,
+    }
 
 
 @router.get("/me", response_model=MeResponse)
@@ -43,22 +77,7 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return {
-        "success": True,
-        "data": {
-            "id": user.id,
-            "email": user.email,
-            "username": user.username,
-            "name": user.name,
-            "bio": user.bio,
-            "displayName": user.display_name,
-            "avatarUrl": user.avatar_url,
-            "balance": float(user.balance or 0),
-            "rating": user.current_rating or 1200,
-            "createdAt": user.created_at,
-            "updatedAt": user.updated_at,
-        },
-    }
+    return {"success": True, "data": _profile_payload(db, user)}
 
 
 @router.get("/profile", response_model=ProfileResponse)
@@ -70,19 +89,7 @@ def get_profile(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return {
-        "success": True,
-        "data": {
-            "id": user.id,
-            "username": user.username,
-            "name": user.name,
-            "bio": user.bio,
-            "email": user.email,
-            "displayName": user.display_name,
-            "balance": float(user.balance or 0),
-            "rating": user.current_rating or 1200,
-        },
-    }
+    return {"success": True, "data": _profile_payload(db, user)}
 
 
 @router.put("/profile", response_model=UpdateProfileResponse)
@@ -133,7 +140,7 @@ def get_balance(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return {"success": True, "data": {"balance": float(user.balance or 0), "currency": "NGN"}}
+    return {"success": True, "data": {"balance": 0.0, "currency": "USD"}}
 
 
 @router.get("/auth-status", response_model=AuthStatusResponse)
@@ -149,7 +156,6 @@ def auth_status(
 
 
 @router.get("/{user_id}", response_model=PublicUserResponse)
-@router.get("/api/users/{user_id}", response_model=PublicUserResponse)
 def get_user_by_id(
     user_id: str,
     db: Session = Depends(get_db),
@@ -157,6 +163,8 @@ def get_user_by_id(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    membership = get_membership_payload(db, user_id)
 
     return {
         "success": True,
@@ -168,5 +176,7 @@ def get_user_by_id(
             "avatarUrl": user.avatar_url,
             "rating": user.current_rating or 1200,
             "createdAt": user.created_at,
+            "isPremium": membership["isPremium"],
+            "membershipTier": membership["membershipTier"],
         },
     }

@@ -222,3 +222,79 @@ class Message(Base):
     deleted_by_recipient = Column(Boolean, default=False)
 
 
+class PremiumMembership(Base):
+    __tablename__ = "premium_memberships"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, unique=True, index=True)
+
+    tier = Column(String(32), default="standard", nullable=False, index=True)
+    status = Column(String(32), default="inactive", nullable=False, index=True)
+
+    wallet_address = Column(String(255), nullable=True)
+    preferred_asset = Column(String(32), nullable=True)
+    preferred_network = Column(String(32), nullable=True)
+
+    monthly_fee_usd = Column(Numeric(12, 2), default=Decimal("5.00"), nullable=False)
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class GiftTransfer(Base):
+    __tablename__ = "gift_transfers"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+
+    sender_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    recipient_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+
+    gift_id = Column(String(64), nullable=False, index=True)
+    gift_name = Column(String(120), nullable=False)
+    piece = Column(String(64), nullable=False)
+    price_usd = Column(Numeric(12, 2), nullable=False)
+
+    note = Column(Text, nullable=True)
+    status = Column(String(32), default="SENT", nullable=False, index=True)
+    redemption_status = Column(String(64), nullable=True, index=True)
+
+    purchase_reference = Column(String(64), nullable=True, index=True)
+    redemption_reference = Column(String(64), nullable=True, index=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    redeemed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_gift_transfers_sender_created", "sender_id", "created_at"),
+        Index("ix_gift_transfers_recipient_created", "recipient_id", "created_at"),
+    )
+
+
+class CryptoRequest(Base):
+    __tablename__ = "crypto_requests"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    linked_gift_transfer_id = Column(String(36), ForeignKey("gift_transfers.id"), nullable=True, index=True)
+
+    kind = Column(String(64), nullable=False, index=True)
+    reference = Column(String(64), unique=True, nullable=False, index=True)
+    status = Column(String(32), default="PENDING", nullable=False, index=True)
+
+    asset = Column(String(32), nullable=True)
+    network = Column(String(32), nullable=True)
+    wallet_address = Column(String(255), nullable=True)
+
+    amount_usd = Column(Numeric(12, 2), nullable=False)
+    amount_crypto = Column(String(64), nullable=True)
+
+    meta = Column(JSONB, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
+
+

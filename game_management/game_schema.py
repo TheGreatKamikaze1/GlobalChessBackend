@@ -48,13 +48,13 @@ class MoveResponse(BaseModel):
     isCheckmate: bool
     isGameOver: bool
     result: Optional[str] = None
-    winnerId: Optional[int] = None
+    winnerId: Optional[str] = None
 
 
 class ResignResponse(BaseModel):
     gameId: str
     result: str
-    winnerId: int
+    winnerId: str
     message: str
 
 

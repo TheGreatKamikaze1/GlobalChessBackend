@@ -11,6 +11,12 @@ class RecentGame(BaseModel):
     completedAt: datetime
 
 
+class GiftActivity(BaseModel):
+    sent: int
+    received: int
+    redeemed: int
+
+
 class DashboardStats(BaseModel):
     totalGames: int
     wins: int
@@ -20,6 +26,9 @@ class DashboardStats(BaseModel):
     currentBalance: float
     totalEarnings: float
     currentRating: int
+    isPremium: bool
+    membershipTier: str
+    giftActivity: GiftActivity
     recentGames: List[RecentGame]
 
 

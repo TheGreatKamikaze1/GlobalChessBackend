@@ -1,6 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from datetime import datetime, timedelta, timezone
 import secrets
 import chess
@@ -37,42 +36,19 @@ async def create_challenge(
         raise HTTPException(status_code=404, detail="User not found")
 
     stake = float(req.stake or 0)
-
-    
-    if stake > 0 and float(user.balance or 0) < stake:
+    if stake > 0:
         raise HTTPException(
             status_code=400,
-            detail={"code": "INSUFFICIENT_BALANCE", "message": "Insufficient balance"},
+            detail="Staked challenges are no longer supported. Create a free match instead.",
         )
 
     now = datetime.now(timezone.utc)
-
-   
-    if stake > 0:
-        open_total = (
-            db.query(func.coalesce(func.sum(Challenge.stake), 0))
-            .filter(
-                Challenge.creator_id == user_id,
-                Challenge.status == "OPEN",
-                Challenge.expires_at > now,
-            )
-            .scalar()
-        )
-
-        if float(open_total) + stake > float(user.balance or 0):
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "code": "STAKE_OVERCOMMIT",
-                    "message": "You already have open challenges that reserve your available balance.",
-                },
-            )
 
     expires_at = now + timedelta(hours=1)
 
     challenge = Challenge(
         creator_id=user_id,
-        stake=req.stake,
+        stake=0,
         expires_at=expires_at,
         time_control=req.time_control,
         status="OPEN",
@@ -88,7 +64,7 @@ async def create_challenge(
         "data": {
             "id": str(challenge.id),
             "creatorId": str(challenge.creator_id),
-            "stake": float(challenge.stake),
+            "stake": 0.0,
             "timeControl": challenge.time_control,
             "status": challenge.status,
             "createdAt": challenge.created_at,
@@ -110,11 +86,16 @@ async def get_available_challenges(
         Challenge.status == "OPEN",
         Challenge.expires_at <= now,
     ).update({Challenge.status: "EXPIRED"}, synchronize_session=False)
+    db.query(Challenge).filter(
+        Challenge.status == "OPEN",
+        Challenge.stake > 0,
+    ).update({Challenge.status: "EXPIRED"}, synchronize_session=False)
     db.commit()
 
     base_query = db.query(Challenge).filter(
         Challenge.status == "OPEN",
         Challenge.expires_at > now,
+        Challenge.stake <= 0,
     )
 
     total = base_query.count()
@@ -129,7 +110,7 @@ async def get_available_challenges(
         AvailableChallenge(
             id=str(c.id),
             creatorId=str(c.creator_id),
-            stake=float(c.stake),
+            stake=0.0,
             timeControl=c.time_control,
             status=c.status,
             createdAt=c.created_at,
@@ -174,6 +155,11 @@ async def accept_challenge(
         if str(challenge.creator_id) == str(user_id):
             raise HTTPException(status_code=400, detail="Cannot accept your own challenge")
 
+        if float(challenge.stake or 0) > 0:
+            challenge.status = "EXPIRED"
+            db.commit()
+            raise HTTPException(status_code=400, detail="Staked challenges are no longer supported")
+
         existing_game = db.query(Game).filter(Game.challenge_id == challenge.id).first()
         if existing_game:
             return {
@@ -196,16 +182,6 @@ async def accept_challenge(
         if not creator or not acceptor:
             raise HTTPException(status_code=404, detail="User not found")
 
-        stake = float(challenge.stake or 0)
-
-       
-        if stake > 0:
-            if float(creator.balance or 0) < stake or float(acceptor.balance or 0) < stake:
-                raise HTTPException(status_code=400, detail="Insufficient balance")
-
-            creator.balance -= challenge.stake
-            acceptor.balance -= challenge.stake
-
         # COLOR ASSIGNMENT
         color_pref = getattr(challenge, "color_preference", "auto") or "auto"
 
@@ -227,7 +203,7 @@ async def accept_challenge(
             challenge_id=challenge.id,
             white_id=white_id,
             black_id=black_id,
-            stake=challenge.stake,
+            stake=0,
             status="ONGOING",
             current_fen=chess.STARTING_FEN,
             moves="[]",

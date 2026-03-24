@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 import re
 from core.database import get_db
-from core.models import Game, User
+from core.models import Game
 from game_management.dependencies import get_current_user_id_dep
 from game_management.logic import process_move
 from game_management.game_schema import (
@@ -75,18 +75,18 @@ def game_history(
         moves = json.loads(g.moves or "[]")
 
         items.append(
-            GameHistoryItem(
-                id=str(g.id),
-                opponent=PlayerDetails(
-                    id=str(opponent.id),
-                    username=opponent.username,
-                    displayName=opponent.display_name,
-                ),
-                stake=float(g.stake),
-                result=result,
-                moveCount=len(moves),
-                completedAt=g.completed_at,
-            )
+                GameHistoryItem(
+                    id=str(g.id),
+                    opponent=PlayerDetails(
+                        id=str(opponent.id),
+                        username=opponent.username,
+                        displayName=opponent.display_name,
+                    ),
+                    stake=0.0,
+                    result=result,
+                    moveCount=len(moves),
+                    completedAt=g.completed_at,
+                )
         )
 
     return {
@@ -117,18 +117,18 @@ def active_games(
         moves = json.loads(g.moves or "[]")
 
         items.append(
-            ActiveGameItem(
-                id=str(g.id),
-                opponent=PlayerDetails(
-                    id=str(opponent.id),
-                    username=opponent.username,
-                    displayName=opponent.display_name,
-                ),
-                stake=float(g.stake),
-                status=g.status,
-                startedAt=g.started_at,
-                currentTurn=get_current_turn(moves),
-            )
+                ActiveGameItem(
+                    id=str(g.id),
+                    opponent=PlayerDetails(
+                        id=str(opponent.id),
+                        username=opponent.username,
+                        displayName=opponent.display_name,
+                    ),
+                    stake=0.0,
+                    status=g.status,
+                    startedAt=g.started_at,
+                    currentTurn=get_current_turn(moves),
+                )
         )
 
     return {"success": True, "data": items}
@@ -167,7 +167,7 @@ def all_games(
             {
                 "id": str(g.id),
                 "opponent": opponent.username,
-                "stake": float(g.stake),
+                "stake": 0.0,
                 "result": result,
                 "date": date,
                 "moves": len(moves),
@@ -257,7 +257,7 @@ def get_game(game_id: str, db: Session = Depends(get_db)):
             username=game.black.username,
             displayName=game.black.display_name,
         ),
-        "stake": float(game.stake),
+        "stake": 0.0,
         "status": game.status,
         "moves": moves,
         "currentFen": (game.current_fen or "").strip() or "startpos",
@@ -322,12 +322,6 @@ def resign_game(
     game.result = result
     game.winner_id = winner_id
     game.completed_at = datetime.now(timezone.utc)
-
-    stake = float(game.stake or 0)
-    if stake > 0:
-        winner = db.query(User).filter(User.id == winner_id).with_for_update().first()
-        if winner:
-            winner.balance += game.stake * 2
 
     db.commit()
 
