@@ -2,10 +2,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from core.models import Game, GiftTransfer, User
-<<<<<<< HEAD
 from core.ratings import get_rating_snapshot, normalize_time_control
-=======
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
 from premium.service import get_membership_payload
 
 
@@ -46,7 +43,6 @@ def get_dashboard_stats(db: Session, user_id: str):
     win_rate = round((wins / total_games) * 100, 1) if total_games > 0 else 0.0
 
     user = db.query(User).filter(User.id == user_id).first()
-<<<<<<< HEAD
     rating_stats = get_rating_snapshot(user) if user else {
         "overall": 1200,
         "bullet": 1200,
@@ -55,9 +51,6 @@ def get_dashboard_stats(db: Session, user_id: str):
         "classical": 1200,
     }
     current_rating = rating_stats["overall"]
-=======
-    current_rating = int(getattr(user, "current_rating", 1200)) if user else 1200
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
 
     membership = get_membership_payload(db, user_id)
 
@@ -85,7 +78,6 @@ def get_dashboard_stats(db: Session, user_id: str):
                 "opponent": opponent.username if opponent else "Unknown",
                 "result": "WIN" if is_win else ("DRAW" if game.result == "DRAW" else "LOSS"),
                 "stake": 0.0,
-<<<<<<< HEAD
                 "timeControl": normalize_time_control(getattr(game, "time_control", None)),
                 "isRated": bool(getattr(game, "is_rated", True)),
                 "ratingCategory": getattr(game, "rating_category", "blitz"),
@@ -94,8 +86,6 @@ def get_dashboard_stats(db: Session, user_id: str):
                     if game.white_id == user_id
                     else game.black_rating_change
                 ),
-=======
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
                 "completedAt": game.completed_at,
             }
         )
@@ -109,10 +99,7 @@ def get_dashboard_stats(db: Session, user_id: str):
         "currentBalance": 0.0,
         "totalEarnings": 0.0,
         "currentRating": int(current_rating),
-<<<<<<< HEAD
         "ratingStats": rating_stats,
-=======
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
         "isPremium": membership["isPremium"],
         "membershipTier": membership["membershipTier"],
         "giftActivity": {

@@ -5,12 +5,8 @@ import json
 from datetime import datetime, timezone
 import re
 from core.database import get_db
-<<<<<<< HEAD
 from core.models import Game, User
 from core.ratings import determine_rating_category, get_user_rating, normalize_time_control
-=======
-from core.models import Game
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
 from game_management.dependencies import get_current_user_id_dep
 from game_management.logic import process_move
 from game_management.ratings import apply_game_result, build_game_rating_payload
@@ -125,7 +121,6 @@ def game_history(
                         id=str(opponent.id),
                         username=opponent.username,
                         displayName=opponent.display_name,
-<<<<<<< HEAD
                         rating=int(opponent_rating),
                     ),
                     stake=0.0,
@@ -135,10 +130,6 @@ def game_history(
                     playerRatingBefore=player_rating_before,
                     playerRatingAfter=player_rating_after,
                     playerRatingChange=player_rating_change,
-=======
-                    ),
-                    stake=0.0,
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
                     result=result,
                     moveCount=len(moves),
                     completedAt=g.completed_at,
@@ -183,17 +174,12 @@ def active_games(
                         id=str(opponent.id),
                         username=opponent.username,
                         displayName=opponent.display_name,
-<<<<<<< HEAD
                         rating=int(opponent_rating),
                     ),
                     stake=0.0,
                     timeControl=_game_time_control(g),
                     isRated=bool(getattr(g, "is_rated", True)),
                     ratingCategory=_game_rating_category(g),
-=======
-                    ),
-                    stake=0.0,
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
                     status=g.status,
                     startedAt=g.started_at,
                     currentTurn=get_current_turn(moves),
@@ -316,7 +302,6 @@ def get_game(game_id: str, db: Session = Depends(get_db)):
 
     return {
         "id": str(game.id),
-<<<<<<< HEAD
         "white": _player_details(game.white, game, "white"),
         "black": _player_details(game.black, game, "black"),
         "stake": 0.0,
@@ -324,19 +309,6 @@ def get_game(game_id: str, db: Session = Depends(get_db)):
         "isRated": bool(getattr(game, "is_rated", True)),
         "ratingCategory": _game_rating_category(game),
         "rating": _rating_state(game),
-=======
-        "white": PlayerDetails(
-            id=str(game.white.id),
-            username=game.white.username,
-            displayName=game.white.display_name,
-        ),
-        "black": PlayerDetails(
-            id=str(game.black.id),
-            username=game.black.username,
-            displayName=game.black.display_name,
-        ),
-        "stake": 0.0,
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
         "status": game.status,
         "moves": moves,
         "currentFen": (game.current_fen or "").strip() or "startpos",
@@ -409,10 +381,7 @@ def resign_game(
     game.result = result
     game.winner_id = winner_id
     game.completed_at = datetime.now(timezone.utc)
-<<<<<<< HEAD
     rating_payload = apply_game_result(game, white_player, black_player)
-=======
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
 
     db.commit()
 

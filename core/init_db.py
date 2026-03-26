@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError
 
@@ -11,8 +13,6 @@ from core.ratings import (
     normalize_time_control,
     recompute_overall_rating,
 )
-
-<<<<<<< HEAD
 
 SCHEMA_PATCHES: dict[str, dict[str, str]] = {
     "users": {
@@ -116,21 +116,6 @@ def _backfill_rating_state() -> None:
         db.close()
 
 
-def init_db() -> None:
-    try:
-        Base.metadata.create_all(bind=engine)
-        _ensure_schema_columns()
-        _backfill_rating_state()
-    except OperationalError as exc:
-        raise RuntimeError(f"Database not reachable. Startup aborted: {exc}") from exc
-
-
-def reset_db() -> None:
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    _ensure_schema_columns()
-=======
-
 NON_RETRYABLE_DB_ERRORS = (
     "password authentication failed",
     "server does not support ssl",
@@ -145,19 +130,27 @@ def _is_retryable_db_error(error: OperationalError) -> bool:
     return not any(fragment in message for fragment in NON_RETRYABLE_DB_ERRORS)
 
 
-def init_db():
+def init_db() -> None:
     print("Creating database tables...")
 
     for attempt in range(1, 8):
         try:
             Base.metadata.create_all(bind=engine)
+            _ensure_schema_columns()
+            _backfill_rating_state()
             print("Done.")
             return
-        except OperationalError as e:
-            if not _is_retryable_db_error(e):
-                raise RuntimeError(f"Database configuration error: {e}") from e
-            print(f"[init_db] DB not ready (attempt {attempt}/7): {e}")
+        except OperationalError as exc:
+            if not _is_retryable_db_error(exc):
+                raise RuntimeError(f"Database configuration error: {exc}") from exc
+            print(f"[init_db] DB not ready (attempt {attempt}/7): {exc}")
             time.sleep(min(2 * attempt, 10))
 
     raise RuntimeError("Database not reachable after retries. Startup aborted.")
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
+
+
+def reset_db() -> None:
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    _ensure_schema_columns()
+    _backfill_rating_state()

@@ -8,11 +8,8 @@ from sqlalchemy.orm import Session
 from core.auth import get_current_user_id
 from core.database import get_db
 from core.models import GiftTransfer, User
-<<<<<<< HEAD
 from core.rating_schemas import RatingStats
 from core.ratings import get_rating_snapshot
-=======
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
 from premium.service import get_membership_payload
 from users.users_schema import (
     AuthStatusResponse,
@@ -56,10 +53,7 @@ def _gift_counts(db: Session, user_id: str) -> dict:
 def _profile_payload(db: Session, user: User) -> dict:
     membership = get_membership_payload(db, str(user.id))
     gift_counts = _gift_counts(db, str(user.id))
-<<<<<<< HEAD
     rating_stats = get_rating_snapshot(user)
-=======
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
 
     return {
         "id": user.id,
@@ -70,12 +64,8 @@ def _profile_payload(db: Session, user: User) -> dict:
         "displayName": user.display_name,
         "avatarUrl": user.avatar_url,
         "balance": 0.0,
-<<<<<<< HEAD
         "rating": rating_stats["overall"],
         "ratingStats": rating_stats,
-=======
-        "rating": user.current_rating or 1200,
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
         "createdAt": user.created_at,
         "updatedAt": user.updated_at,
         **membership,
@@ -180,10 +170,7 @@ def get_user_by_id(
         raise HTTPException(status_code=404, detail="User not found")
 
     membership = get_membership_payload(db, user_id)
-<<<<<<< HEAD
     rating_stats = get_rating_snapshot(user)
-=======
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
 
     return {
         "success": True,

@@ -47,11 +47,8 @@ async def create_challenge(
         )
 
     now = datetime.now(timezone.utc)
-<<<<<<< HEAD
     normalized_time_control = normalize_time_control(req.time_control)
     rating_category = determine_rating_category(normalized_time_control)
-=======
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
 
     expires_at = now + timedelta(hours=1)
 
@@ -223,12 +220,9 @@ async def accept_challenge(
             white_id=white_id,
             black_id=black_id,
             stake=0,
-<<<<<<< HEAD
             time_control=normalized_time_control,
             rating_category=rating_category,
             is_rated=bool(getattr(challenge, "is_rated", True)),
-=======
->>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
             status="ONGOING",
             current_fen=chess.STARTING_FEN,
             moves="[]",
