@@ -23,7 +23,10 @@ class ProfileData(BaseModel):
     avatarUrl: Optional[str] = None
     balance: float
     rating: int
+<<<<<<< HEAD
     ratingStats: RatingStats
+=======
+>>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
     createdAt: Optional[datetime] = None
     updatedAt: Optional[datetime] = None
     isPremium: bool = False

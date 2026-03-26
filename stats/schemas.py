@@ -31,7 +31,10 @@ class DashboardStats(BaseModel):
     currentBalance: float
     totalEarnings: float
     currentRating: int
+<<<<<<< HEAD
     ratingStats: RatingStats
+=======
+>>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
     isPremium: bool
     membershipTier: str
     giftActivity: GiftActivity

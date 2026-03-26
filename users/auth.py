@@ -66,7 +66,10 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
 
     token = create_token({"id": new_user.id, "email": new_user.email})
     membership = get_membership_payload(db, new_user.id)
+<<<<<<< HEAD
     rating_stats = get_rating_snapshot(new_user)
+=======
+>>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
 
     return {
         "success": True,
@@ -80,8 +83,12 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
                 "bio": new_user.bio,
                 "avatarUrl": new_user.avatar_url,
                 "balance": 0.0,
+<<<<<<< HEAD
                 "rating": rating_stats["overall"],
                 "ratingStats": rating_stats,
+=======
+                "rating": new_user.current_rating or 1200,
+>>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
                 "createdAt": new_user.created_at,
                 "updatedAt": new_user.updated_at,
                 **membership,
@@ -106,7 +113,10 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
 
     token = create_token({"id": user.id, "email": user.email})
     membership = get_membership_payload(db, user.id)
+<<<<<<< HEAD
     rating_stats = get_rating_snapshot(user)
+=======
+>>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
 
     return {
         "success": True,
@@ -120,8 +130,12 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
                 "bio": user.bio,
                 "avatarUrl": user.avatar_url,
                 "balance": 0.0,
+<<<<<<< HEAD
                 "rating": rating_stats["overall"],
                 "ratingStats": rating_stats,
+=======
+                "rating": user.current_rating or 1200,
+>>>>>>> 89449e5a69ac70b3215a33ca65e8140c6c956118
                 "createdAt": user.created_at,
                 "updatedAt": user.updated_at,
                 **membership,
