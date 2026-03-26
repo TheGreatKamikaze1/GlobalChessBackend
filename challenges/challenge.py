@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from datetime import datetime, timedelta, timezone
 import secrets
 import chess
 
 from core.database import get_db
 from core.models import User, Challenge, Game
+from core.ratings import determine_rating_category, get_user_rating, normalize_time_control
 from challenges.challenge_schema import (
     CreateChallengeSchema,
     AvailableChallenge,
@@ -14,15 +14,18 @@ from challenges.challenge_schema import (
     UserMini,
 )
 from game_management.dependencies import get_current_user_id_dep
+from game_management.ratings import initialize_game_rating_snapshot
 
 router = APIRouter(tags=["Challenges"])
 
 
-def orm_user_mini(user: User) -> dict:
+def orm_user_mini(user: User, rating_category: str | None = None) -> dict:
+    category = rating_category or "blitz"
     return {
         "id": str(user.id),
         "username": user.username,
         "displayName": user.display_name,
+        "rating": get_user_rating(user, category),
     }
 
 
@@ -37,46 +40,26 @@ async def create_challenge(
         raise HTTPException(status_code=404, detail="User not found")
 
     stake = float(req.stake or 0)
-
-    
-    if stake > 0 and float(user.balance or 0) < stake:
+    if stake > 0:
         raise HTTPException(
             status_code=400,
-            detail={"code": "INSUFFICIENT_BALANCE", "message": "Insufficient balance"},
+            detail="Staked challenges are no longer supported. Create a free match instead.",
         )
 
     now = datetime.now(timezone.utc)
-
-   
-    if stake > 0:
-        open_total = (
-            db.query(func.coalesce(func.sum(Challenge.stake), 0))
-            .filter(
-                Challenge.creator_id == user_id,
-                Challenge.status == "OPEN",
-                Challenge.expires_at > now,
-            )
-            .scalar()
-        )
-
-        if float(open_total) + stake > float(user.balance or 0):
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "code": "STAKE_OVERCOMMIT",
-                    "message": "You already have open challenges that reserve your available balance.",
-                },
-            )
+    normalized_time_control = normalize_time_control(req.time_control)
+    rating_category = determine_rating_category(normalized_time_control)
 
     expires_at = now + timedelta(hours=1)
 
     challenge = Challenge(
         creator_id=user_id,
-        stake=req.stake,
+        stake=0,
         expires_at=expires_at,
-        time_control=req.time_control,
+        time_control=normalized_time_control,
         status="OPEN",
         color_preference=req.color,
+        is_rated=req.rated,
     )
 
     db.add(challenge)
@@ -88,8 +71,10 @@ async def create_challenge(
         "data": {
             "id": str(challenge.id),
             "creatorId": str(challenge.creator_id),
-            "stake": float(challenge.stake),
+            "stake": 0.0,
             "timeControl": challenge.time_control,
+            "isRated": bool(challenge.is_rated),
+            "ratingCategory": rating_category,
             "status": challenge.status,
             "createdAt": challenge.created_at,
             "expiresAt": challenge.expires_at,
@@ -110,11 +95,16 @@ async def get_available_challenges(
         Challenge.status == "OPEN",
         Challenge.expires_at <= now,
     ).update({Challenge.status: "EXPIRED"}, synchronize_session=False)
+    db.query(Challenge).filter(
+        Challenge.status == "OPEN",
+        Challenge.stake > 0,
+    ).update({Challenge.status: "EXPIRED"}, synchronize_session=False)
     db.commit()
 
     base_query = db.query(Challenge).filter(
         Challenge.status == "OPEN",
         Challenge.expires_at > now,
+        Challenge.stake <= 0,
     )
 
     total = base_query.count()
@@ -129,12 +119,14 @@ async def get_available_challenges(
         AvailableChallenge(
             id=str(c.id),
             creatorId=str(c.creator_id),
-            stake=float(c.stake),
+            stake=0.0,
             timeControl=c.time_control,
+            isRated=bool(getattr(c, "is_rated", True)),
+            ratingCategory=determine_rating_category(c.time_control),
             status=c.status,
             createdAt=c.created_at,
             expiresAt=c.expires_at,
-            creator=UserMini(**orm_user_mini(c.creator)),
+            creator=UserMini(**orm_user_mini(c.creator, determine_rating_category(c.time_control))),
         )
         for c in challenges
     ]
@@ -174,6 +166,11 @@ async def accept_challenge(
         if str(challenge.creator_id) == str(user_id):
             raise HTTPException(status_code=400, detail="Cannot accept your own challenge")
 
+        if float(challenge.stake or 0) > 0:
+            challenge.status = "EXPIRED"
+            db.commit()
+            raise HTTPException(status_code=400, detail="Staked challenges are no longer supported")
+
         existing_game = db.query(Game).filter(Game.challenge_id == challenge.id).first()
         if existing_game:
             return {
@@ -196,16 +193,6 @@ async def accept_challenge(
         if not creator or not acceptor:
             raise HTTPException(status_code=404, detail="User not found")
 
-        stake = float(challenge.stake or 0)
-
-       
-        if stake > 0:
-            if float(creator.balance or 0) < stake or float(acceptor.balance or 0) < stake:
-                raise HTTPException(status_code=400, detail="Insufficient balance")
-
-            creator.balance -= challenge.stake
-            acceptor.balance -= challenge.stake
-
         # COLOR ASSIGNMENT
         color_pref = getattr(challenge, "color_preference", "auto") or "auto"
 
@@ -223,16 +210,26 @@ async def accept_challenge(
                 white_id = user_id
                 black_id = challenge.creator_id
 
+        normalized_time_control = normalize_time_control(challenge.time_control)
+        rating_category = determine_rating_category(normalized_time_control)
+        white_player = creator if str(creator.id) == str(white_id) else acceptor
+        black_player = creator if str(creator.id) == str(black_id) else acceptor
+
         new_game = Game(
             challenge_id=challenge.id,
             white_id=white_id,
             black_id=black_id,
-            stake=challenge.stake,
+            stake=0,
+            time_control=normalized_time_control,
+            rating_category=rating_category,
+            is_rated=bool(getattr(challenge, "is_rated", True)),
             status="ONGOING",
             current_fen=chess.STARTING_FEN,
             moves="[]",
             started_at=now,
         )
+
+        initialize_game_rating_snapshot(new_game, white_player, black_player)
 
         challenge.status = "ACCEPTED"
         challenge.acceptor_id = user_id

@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from datetime import datetime
 from typing import List
+from core.rating_schemas import RatingStats
 
 
 class RecentGame(BaseModel):
@@ -8,7 +9,17 @@ class RecentGame(BaseModel):
     opponent: str
     result: str
     stake: float
+    timeControl: str
+    isRated: bool
+    ratingCategory: str
+    ratingChange: int | None = None
     completedAt: datetime
+
+
+class GiftActivity(BaseModel):
+    sent: int
+    received: int
+    redeemed: int
 
 
 class DashboardStats(BaseModel):
@@ -20,6 +31,10 @@ class DashboardStats(BaseModel):
     currentBalance: float
     totalEarnings: float
     currentRating: int
+    ratingStats: RatingStats
+    isPremium: bool
+    membershipTier: str
+    giftActivity: GiftActivity
     recentGames: List[RecentGame]
 
 

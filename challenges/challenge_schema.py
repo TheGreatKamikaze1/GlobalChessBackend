@@ -4,21 +4,23 @@ from typing import Optional, List, Dict, Literal
 
 
 class CreateChallengeSchema(BaseModel):
-    stake: float = Field(..., ge=0, description="The amount staked in the challenge.")
+    stake: float = Field(0, ge=0, description="Legacy field. Staked matches are no longer supported.")
     time_control: str = Field(
-        "60/0",
-        description="Time control format (e.g., '60/0' for 60 minutes no increment).",
+        "5+0",
+        description="Time control format (e.g., '5+0' for a 5 minute game with no increment).",
     )
     color: Literal["white", "black", "auto"] = Field(
         "auto",
         description="Preferred color: 'white', 'black', or 'auto'.",
     )
+    rated: bool = Field(True, description="Whether this challenge should affect player ratings.")
 
 
 class UserMini(BaseModel):
     id: str
     username: str
     displayName: str
+    rating: int = 1200
 
     model_config = {"from_attributes": True}
 
@@ -28,6 +30,8 @@ class ChallengeBase(BaseModel):
     creatorId: str
     stake: float
     timeControl: str
+    isRated: bool
+    ratingCategory: str
     status: str
     createdAt: datetime
     expiresAt: datetime

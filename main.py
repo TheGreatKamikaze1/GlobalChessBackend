@@ -9,16 +9,15 @@ from core.exceptions import AppException
 from users.auth import router as auth_router
 from game_management.game import router as game_router
 from challenges.challenge import router as challenge_router
-from transactions.main import router as transaction_router
 from stats.main import router as stats_router
-from payment_service.app.api.routes.paystack import router as payment_router
 from users.users import router as users_router
-from tournaments.router import router as tournaments_router
 from social.search import router as search_router
 from social.friends import router as friends_router
 from social.chat import router as chat_router
 from sockets.voice_chat import voice_router
 from sockets.game_socket import game_socket
+from premium.router import router as premium_router
+from gifts.router import router as gifts_router
 
 
 app = FastAPI(
@@ -51,15 +50,14 @@ app.add_exception_handler(AppException, app_exception_handler)
 app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
 app.include_router(game_router, prefix="/api/games", tags=["Games"])
 app.include_router(challenge_router, prefix="/api/challenges", tags=["Challenges"])
-app.include_router(transaction_router, prefix="/api/transactions", tags=["Transactions"])
 app.include_router(users_router, prefix="/api/users", tags=["Users"])
 app.include_router(stats_router, prefix="/api/stats", tags=["Statistics"])
-app.include_router(payment_router, prefix="/api/payments")
 app.include_router(search_router)
 app.include_router(friends_router)
 app.include_router(chat_router)
-app.include_router(tournaments_router, prefix="/api/tournaments", tags=["Tournaments"])
 app.include_router(voice_router)
+app.include_router(premium_router, prefix="/api/premium", tags=["Premium"])
+app.include_router(gifts_router, prefix="/api/gifts", tags=["Gifts"])
 
 
 @app.websocket("/ws/game")

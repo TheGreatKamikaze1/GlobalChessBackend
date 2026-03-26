@@ -29,7 +29,12 @@ class User(Base):
     avatar_url = Column(String, nullable=True)
     games_played = Column(Integer, default=0, nullable=False)
     games_won = Column(Integer, default=0, nullable=False)
+    rated_games_played = Column(Integer, default=0, nullable=False)
     current_rating = Column(Integer, default=1200, nullable=False)
+    bullet_rating = Column(Integer, default=1200, nullable=False)
+    blitz_rating = Column(Integer, default=1200, nullable=False)
+    rapid_rating = Column(Integer, default=1200, nullable=False)
+    classical_rating = Column(Integer, default=1200, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -71,13 +76,14 @@ class Challenge(Base):
     acceptor_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
 
     stake = Column(Numeric(12, 2), nullable=False)
-    time_control = Column(String, default="60/0")
+    time_control = Column(String, default="5+0")
 
     status = Column(String, default="OPEN", index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
 
     color_preference = Column(String, default="auto")
+    is_rated = Column(Boolean, default=True, nullable=False)
 
     creator = relationship("User", back_populates="created_challenges", foreign_keys=[creator_id])
     acceptor = relationship("User", back_populates="accepted_challenges", foreign_keys=[acceptor_id])
@@ -102,6 +108,16 @@ class Game(Base):
     stake = Column(Numeric(12, 2), nullable=False)
     premove_white = Column(Text, nullable=True) 
     premove_black = Column(Text, nullable=True)
+    time_control = Column(String, default="5+0", nullable=False)
+    rating_category = Column(String, default="blitz", nullable=False, index=True)
+    is_rated = Column(Boolean, default=True, nullable=False, index=True)
+    rating_applied = Column(Boolean, default=False, nullable=False)
+    white_rating_before = Column(Integer, nullable=True)
+    black_rating_before = Column(Integer, nullable=True)
+    white_rating_after = Column(Integer, nullable=True)
+    black_rating_after = Column(Integer, nullable=True)
+    white_rating_change = Column(Integer, nullable=True)
+    black_rating_change = Column(Integer, nullable=True)
 
 
     status = Column(String, default="ONGOING", index=True)
@@ -220,5 +236,81 @@ class Message(Base):
     
     deleted_by_sender = Column(Boolean, default=False)
     deleted_by_recipient = Column(Boolean, default=False)
+
+
+class PremiumMembership(Base):
+    __tablename__ = "premium_memberships"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, unique=True, index=True)
+
+    tier = Column(String(32), default="standard", nullable=False, index=True)
+    status = Column(String(32), default="inactive", nullable=False, index=True)
+
+    wallet_address = Column(String(255), nullable=True)
+    preferred_asset = Column(String(32), nullable=True)
+    preferred_network = Column(String(32), nullable=True)
+
+    monthly_fee_usd = Column(Numeric(12, 2), default=Decimal("5.00"), nullable=False)
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class GiftTransfer(Base):
+    __tablename__ = "gift_transfers"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+
+    sender_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    recipient_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+
+    gift_id = Column(String(64), nullable=False, index=True)
+    gift_name = Column(String(120), nullable=False)
+    piece = Column(String(64), nullable=False)
+    price_usd = Column(Numeric(12, 2), nullable=False)
+
+    note = Column(Text, nullable=True)
+    status = Column(String(32), default="SENT", nullable=False, index=True)
+    redemption_status = Column(String(64), nullable=True, index=True)
+
+    purchase_reference = Column(String(64), nullable=True, index=True)
+    redemption_reference = Column(String(64), nullable=True, index=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    redeemed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_gift_transfers_sender_created", "sender_id", "created_at"),
+        Index("ix_gift_transfers_recipient_created", "recipient_id", "created_at"),
+    )
+
+
+class CryptoRequest(Base):
+    __tablename__ = "crypto_requests"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    linked_gift_transfer_id = Column(String(36), ForeignKey("gift_transfers.id"), nullable=True, index=True)
+
+    kind = Column(String(64), nullable=False, index=True)
+    reference = Column(String(64), unique=True, nullable=False, index=True)
+    status = Column(String(32), default="PENDING", nullable=False, index=True)
+
+    asset = Column(String(32), nullable=True)
+    network = Column(String(32), nullable=True)
+    wallet_address = Column(String(255), nullable=True)
+
+    amount_usd = Column(Numeric(12, 2), nullable=False)
+    amount_crypto = Column(String(64), nullable=True)
+
+    meta = Column(JSONB, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
 
 

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from core.models import Game, User
 from datetime import datetime, timezone
 import re
+from game_management.ratings import apply_game_result
 
 _UCI_RE = re.compile(r"^[a-h][1-8][a-h][1-8][qrbn]?$", re.IGNORECASE)
 
@@ -153,6 +154,12 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
     game.status = "COMPLETED"
     game.completed_at = datetime.now(timezone.utc)
 
+    white_player = db.query(User).filter(User.id == game.white_id).with_for_update().first()
+    black_player = db.query(User).filter(User.id == game.black_id).with_for_update().first()
+
+    if not white_player or not black_player:
+        return {"error": "PLAYER_NOT_FOUND"}
+
     stake = float(game.stake or 0)
     winner_id = None
 
@@ -169,7 +176,7 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
 
         
         if stake > 0 and winner_id:
-            winner = db.query(User).filter(User.id == winner_id).with_for_update().first()
+            winner = white_player if str(white_player.id) == str(winner_id) else black_player
             if winner:
                 winner.balance += (game.stake * 2)
     else:
@@ -180,6 +187,7 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
                 synchronize_session=False,
             )
 
+    rating_payload = apply_game_result(game, white_player, black_player)
     db.commit()
 
     return {
@@ -190,6 +198,7 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
         "isCheck": is_check,
         "isCheckmate": is_checkmate,
         "gameOver": True,
+        "rating": rating_payload,
         "result": game.result,
         "winnerId": winner_id,
         "premoveApplied": premove_applied,

@@ -1,6 +1,9 @@
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, func, case
-from core.models import Game, User
+
+from core.models import Game, GiftTransfer, User
+from core.ratings import get_rating_snapshot, normalize_time_control
+from premium.service import get_membership_payload
 
 
 def get_dashboard_stats(db: Session, user_id: str):
@@ -40,30 +43,24 @@ def get_dashboard_stats(db: Session, user_id: str):
     win_rate = round((wins / total_games) * 100, 1) if total_games > 0 else 0.0
 
     user = db.query(User).filter(User.id == user_id).first()
-    current_balance = float(user.balance) if user else 0.0
-    current_rating = int(getattr(user, "current_rating", 1200)) if user else 1200
+    rating_stats = get_rating_snapshot(user) if user else {
+        "overall": 1200,
+        "bullet": 1200,
+        "blitz": 1200,
+        "rapid": 1200,
+        "classical": 1200,
+    }
+    current_rating = rating_stats["overall"]
 
+    membership = get_membership_payload(db, user_id)
 
-    profit_query = (
-        db.query(
-            func.coalesce(
-                func.sum(
-                    case(
-                        (Game.result == "DRAW", 0.0),
-                        ((Game.result == "WHITE_WIN") & (Game.white_id == user_id), Game.stake),
-                        ((Game.result == "BLACK_WIN") & (Game.black_id == user_id), Game.stake),
-                        else_=-Game.stake,
-                    )
-                ),
-                0.0,
-            )
-        )
-        .filter(
-            or_(Game.white_id == user_id, Game.black_id == user_id),
-            Game.status == "COMPLETED",
-        )
+    sent_gifts = db.query(GiftTransfer).filter(GiftTransfer.sender_id == user_id).count()
+    received_gifts = db.query(GiftTransfer).filter(GiftTransfer.recipient_id == user_id).count()
+    redeemed_gifts = (
+        db.query(GiftTransfer)
+        .filter(GiftTransfer.recipient_id == user_id, GiftTransfer.status == "REDEEMED")
+        .count()
     )
-    total_earnings = float(profit_query.scalar() or 0.0)
 
     recent_games_raw = base.order_by(Game.completed_at.desc()).limit(5).all()
     recent_games = []
@@ -80,7 +77,15 @@ def get_dashboard_stats(db: Session, user_id: str):
                 "id": str(game.id),
                 "opponent": opponent.username if opponent else "Unknown",
                 "result": "WIN" if is_win else ("DRAW" if game.result == "DRAW" else "LOSS"),
-                "stake": float(game.stake),
+                "stake": 0.0,
+                "timeControl": normalize_time_control(getattr(game, "time_control", None)),
+                "isRated": bool(getattr(game, "is_rated", True)),
+                "ratingCategory": getattr(game, "rating_category", "blitz"),
+                "ratingChange": (
+                    game.white_rating_change
+                    if game.white_id == user_id
+                    else game.black_rating_change
+                ),
                 "completedAt": game.completed_at,
             }
         )
@@ -91,8 +96,16 @@ def get_dashboard_stats(db: Session, user_id: str):
         "losses": int(losses),
         "draws": int(draws),
         "winRate": float(win_rate),
-        "currentBalance": float(current_balance),
-        "totalEarnings": float(total_earnings),
+        "currentBalance": 0.0,
+        "totalEarnings": 0.0,
         "currentRating": int(current_rating),
+        "ratingStats": rating_stats,
+        "isPremium": membership["isPremium"],
+        "membershipTier": membership["membershipTier"],
+        "giftActivity": {
+            "sent": int(sent_gifts),
+            "received": int(received_gifts),
+            "redeemed": int(redeemed_gifts),
+        },
         "recentGames": recent_games,
     }

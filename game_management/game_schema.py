@@ -7,6 +7,20 @@ class PlayerDetails(BaseModel):
     id: str
     username: str
     displayName: str
+    rating: int = 1200
+
+
+class RatingState(BaseModel):
+    isRated: bool
+    ratingCategory: str
+    timeControl: str
+    applied: bool = False
+    whiteBefore: Optional[int] = None
+    blackBefore: Optional[int] = None
+    whiteAfter: Optional[int] = None
+    blackAfter: Optional[int] = None
+    whiteChange: Optional[int] = None
+    blackChange: Optional[int] = None
 
 
 class MoveRequest(BaseModel):
@@ -30,6 +44,10 @@ class GameResponse(BaseModel):
     white: PlayerDetails
     black: PlayerDetails
     stake: float
+    timeControl: str
+    isRated: bool
+    ratingCategory: str
+    rating: RatingState
     status: str
     moves: List[str]              
     currentFen: str
@@ -47,21 +65,29 @@ class MoveResponse(BaseModel):
     isCheck: bool
     isCheckmate: bool
     isGameOver: bool
+    rating: Optional[RatingState] = None
     result: Optional[str] = None
-    winnerId: Optional[int] = None
+    winnerId: Optional[str] = None
 
 
 class ResignResponse(BaseModel):
     gameId: str
     result: str
-    winnerId: int
+    winnerId: str
     message: str
+    rating: Optional[RatingState] = None
 
 
 class GameHistoryItem(BaseModel):
     id: str
     opponent: PlayerDetails
     stake: float
+    timeControl: str
+    isRated: bool
+    ratingCategory: str
+    playerRatingBefore: Optional[int] = None
+    playerRatingAfter: Optional[int] = None
+    playerRatingChange: Optional[int] = None
     result: str
     moveCount: int
     completedAt: datetime
@@ -77,6 +103,9 @@ class ActiveGameItem(BaseModel):
     id: str
     opponent: PlayerDetails
     stake: float
+    timeControl: str
+    isRated: bool
+    ratingCategory: str
     status: str
     startedAt: datetime
     currentTurn: Literal["white", "black"]

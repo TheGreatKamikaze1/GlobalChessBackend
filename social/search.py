@@ -5,6 +5,8 @@ from sqlalchemy import or_, and_
 from core.database import get_db
 from core.models import User, FriendRequest
 from core.auth import get_current_user
+from premium.service import get_membership
+from premium.service import is_membership_active
 from social.schemas import SearchUsersResponse, SearchUserOut
 
 router = APIRouter(prefix="/api/search", tags=["Search"])
@@ -81,6 +83,7 @@ def search_users(
                 displayName=u.display_name,
                 avatarUrl=u.avatar_url,
                 rating=u.current_rating or 1200,
+                isPremium=is_membership_active(get_membership(db, other_id)),
                 friendStatus=status,
             )
         )

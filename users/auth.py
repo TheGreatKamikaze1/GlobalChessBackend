@@ -5,8 +5,10 @@ from sqlalchemy.exc import IntegrityError
 
 from core.database import get_db
 from core.models import User
+from core.ratings import get_rating_snapshot
 from users.auth_schema import RegisterSchema, LoginSchema
 from core.auth import create_token
+from premium.service import get_membership_payload
 
 router = APIRouter(tags=["Auth"])
 
@@ -63,6 +65,8 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email or username already in use")
 
     token = create_token({"id": new_user.id, "email": new_user.email})
+    membership = get_membership_payload(db, new_user.id)
+    rating_stats = get_rating_snapshot(new_user)
 
     return {
         "success": True,
@@ -72,6 +76,15 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
                 "email": new_user.email,
                 "username": new_user.username,
                 "displayName": new_user.display_name,
+                "name": new_user.name,
+                "bio": new_user.bio,
+                "avatarUrl": new_user.avatar_url,
+                "balance": 0.0,
+                "rating": rating_stats["overall"],
+                "ratingStats": rating_stats,
+                "createdAt": new_user.created_at,
+                "updatedAt": new_user.updated_at,
+                **membership,
             },
             "token": token,
         },
@@ -92,6 +105,8 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token({"id": user.id, "email": user.email})
+    membership = get_membership_payload(db, user.id)
+    rating_stats = get_rating_snapshot(user)
 
     return {
         "success": True,
@@ -101,6 +116,15 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
                 "email": user.email,
                 "username": user.username,
                 "displayName": user.display_name,
+                "name": user.name,
+                "bio": user.bio,
+                "avatarUrl": user.avatar_url,
+                "balance": 0.0,
+                "rating": rating_stats["overall"],
+                "ratingStats": rating_stats,
+                "createdAt": user.created_at,
+                "updatedAt": user.updated_at,
+                **membership,
             },
             "token": token,
         },

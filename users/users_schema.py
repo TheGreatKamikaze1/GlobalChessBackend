@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
+from core.rating_schemas import RatingStats
 
 
 class UpdateProfileSchema(BaseModel):
@@ -19,8 +20,19 @@ class ProfileData(BaseModel):
     name: Optional[str] = None
     bio: Optional[str] = None
     displayName: Optional[str] = None
+    avatarUrl: Optional[str] = None
     balance: float
     rating: int
+    ratingStats: RatingStats
+    createdAt: Optional[datetime] = None
+    updatedAt: Optional[datetime] = None
+    isPremium: bool = False
+    membershipTier: str = "standard"
+    walletAddress: Optional[str] = None
+    premiumSince: Optional[datetime] = None
+    giftingEnabled: bool = False
+    sentGiftCount: int = 0
+    receivedGiftCount: int = 0
 
 
 class ProfileResponse(BaseModel):
@@ -38,8 +50,16 @@ class MeData(BaseModel):
     avatarUrl: Optional[str] = None
     balance: float
     rating: int
+    ratingStats: RatingStats
     createdAt: Optional[datetime] = None
     updatedAt: Optional[datetime] = None
+    isPremium: bool = False
+    membershipTier: str = "standard"
+    walletAddress: Optional[str] = None
+    premiumSince: Optional[datetime] = None
+    giftingEnabled: bool = False
+    sentGiftCount: int = 0
+    receivedGiftCount: int = 0
 
 
 class MeResponse(BaseModel):
