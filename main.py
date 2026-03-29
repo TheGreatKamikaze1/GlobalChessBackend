@@ -16,7 +16,6 @@ from social.friends import router as friends_router
 from social.chat import router as chat_router
 from sockets.voice_chat import voice_router
 from sockets.game_socket import game_socket
-from premium.router import router as premium_router
 from gifts.router import router as gifts_router
 
 
@@ -38,7 +37,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://localhost:8080",
         "https://global-connect-chess.netlify.app",
-        
+        "https://teal-halva-4a5e7d.netlify.app",
     ],
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,7 +55,6 @@ app.include_router(search_router)
 app.include_router(friends_router)
 app.include_router(chat_router)
 app.include_router(voice_router)
-app.include_router(premium_router, prefix="/api/premium", tags=["Premium"])
 app.include_router(gifts_router, prefix="/api/gifts", tags=["Gifts"])
 
 

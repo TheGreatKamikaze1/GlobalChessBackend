@@ -31,7 +31,7 @@ GIFT_CATALOG = [
         "id": "queen",
         "name": "Queen's Glory",
         "piece": "Queen",
-        "description": "A premium gift for standout performances and community stars.",
+        "description": "A feature gift for standout performances and community stars.",
         "price_usd": 100,
     },
     {

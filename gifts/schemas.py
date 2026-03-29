@@ -17,7 +17,6 @@ class GiftUserMini(BaseModel):
     username: str
     displayName: str
     avatarUrl: Optional[str] = None
-    isPremium: bool = False
 
 
 class GiftRecordOut(BaseModel):

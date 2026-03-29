@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -15,19 +16,24 @@ from gifts.schemas import (
     GiftSummaryResponse,
     SendGiftRequest,
 )
-from premium.service import create_crypto_request, get_membership, is_membership_active
 
 router = APIRouter(tags=["Gifts"])
 
 
-def _gift_user_payload(db: Session, user: User) -> dict:
-    membership = get_membership(db, str(user.id))
+def _gift_user_payload(user: User | None) -> dict:
+    if not user:
+        return {
+            "id": "unknown",
+            "username": "unknown",
+            "displayName": "Unknown player",
+            "avatarUrl": None,
+        }
+
     return {
         "id": str(user.id),
         "username": user.username,
         "displayName": user.display_name,
         "avatarUrl": user.avatar_url,
-        "isPremium": is_membership_active(membership),
     }
 
 
@@ -48,8 +54,8 @@ def _gift_record_payload(db: Session, gift: GiftTransfer) -> dict:
         "redemptionReference": gift.redemption_reference,
         "createdAt": gift.created_at,
         "redeemedAt": gift.redeemed_at,
-        "sender": _gift_user_payload(db, sender),
-        "recipient": _gift_user_payload(db, recipient),
+        "sender": _gift_user_payload(sender),
+        "recipient": _gift_user_payload(recipient),
     }
 
 
@@ -75,7 +81,6 @@ def get_gift_summary(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    membership = get_membership(db, user_id)
     sent_count = db.query(GiftTransfer).filter(GiftTransfer.sender_id == user_id).count()
     received_count = db.query(GiftTransfer).filter(GiftTransfer.recipient_id == user_id).count()
     redeemed_count = (
@@ -88,12 +93,10 @@ def get_gift_summary(
         .filter(
             GiftTransfer.recipient_id == user_id,
             GiftTransfer.status == "REDEEMED",
-            GiftTransfer.redemption_status == "PENDING_CRYPTO_SETTLEMENT",
+            GiftTransfer.redemption_status == "PENDING_CLAIM_REVIEW",
         )
         .count()
     )
-
-    can_use_gifts = is_membership_active(membership)
 
     return {
         "success": True,
@@ -102,8 +105,8 @@ def get_gift_summary(
             "receivedCount": received_count,
             "redeemedCount": redeemed_count,
             "pendingSettlements": pending_settlements,
-            "canGift": can_use_gifts,
-            "canRedeem": can_use_gifts,
+            "canGift": True,
+            "canRedeem": True,
         },
     }
 
@@ -160,43 +163,16 @@ def send_gift(
     if not sender:
         raise HTTPException(status_code=404, detail="Sender not found")
 
-    sender_membership = get_membership(db, user_id)
-    if not is_membership_active(sender_membership):
-        raise HTTPException(status_code=403, detail="Premium membership is required to send gifts")
-
-    recipient = (
-        db.query(User)
-        .filter(User.username == payload.recipientUsername.strip())
-        .first()
-    )
+    recipient = db.query(User).filter(User.username == payload.recipientUsername.strip()).first()
     if not recipient:
         raise HTTPException(status_code=404, detail="Recipient not found")
 
     if str(recipient.id) == str(user_id):
         raise HTTPException(status_code=400, detail="You cannot send a gift to yourself")
 
-    recipient_membership = get_membership(db, str(recipient.id))
-    if not is_membership_active(recipient_membership):
-        raise HTTPException(
-            status_code=400,
-            detail="Recipient must have active premium membership to receive gifts",
-        )
-
     gift = get_gift_catalog_item(payload.giftId)
     if not gift:
         raise HTTPException(status_code=404, detail="Gift not found")
-
-    purchase_request = create_crypto_request(
-        db,
-        user_id=user_id,
-        kind="GIFT_PURCHASE",
-        amount_usd=Decimal(str(gift["price_usd"])),
-        wallet_address=sender_membership.wallet_address if sender_membership else None,
-        asset=(sender_membership.preferred_asset if sender_membership else None) or "USDT",
-        network=(sender_membership.preferred_network if sender_membership else None) or "TRC20",
-        status="CONFIRMED",
-        meta={"giftId": gift["id"], "recipientId": str(recipient.id)},
-    )
 
     gift_transfer = GiftTransfer(
         sender_id=user_id,
@@ -207,7 +183,7 @@ def send_gift(
         price_usd=Decimal(str(gift["price_usd"])),
         note=(payload.note or "").strip() or None,
         status="SENT",
-        purchase_reference=purchase_request.reference,
+        purchase_reference=f"gift_send_{uuid.uuid4().hex[:12]}",
     )
 
     db.add(gift_transfer)
@@ -231,34 +207,14 @@ def redeem_gift(
     if not gift:
         raise HTTPException(status_code=404, detail="Gift not found")
 
-    membership = get_membership(db, user_id)
-    if not is_membership_active(membership):
-        raise HTTPException(status_code=403, detail="Premium membership is required to redeem gifts")
-
-    if not membership or not membership.wallet_address:
-        raise HTTPException(status_code=400, detail="Save a crypto wallet before redeeming gifts")
-
     if gift.status == "REDEEMED":
         return {"success": True, "data": _gift_record_payload(db, gift)}
 
     now = datetime.now(timezone.utc)
-    crypto_request = create_crypto_request(
-        db,
-        user_id=user_id,
-        linked_gift_transfer_id=str(gift.id),
-        kind="GIFT_REDEMPTION",
-        amount_usd=gift.price_usd,
-        wallet_address=membership.wallet_address,
-        asset=membership.preferred_asset or "USDT",
-        network=membership.preferred_network or "TRC20",
-        status="PENDING",
-        meta={"giftId": gift.gift_id, "note": "Awaiting manual crypto settlement."},
-    )
-
     gift.status = "REDEEMED"
-    gift.redemption_status = "PENDING_CRYPTO_SETTLEMENT"
+    gift.redemption_status = "CLAIMED"
     gift.redeemed_at = now
-    gift.redemption_reference = crypto_request.reference
+    gift.redemption_reference = f"gift_claim_{uuid.uuid4().hex[:12]}"
 
     db.commit()
     db.refresh(gift)

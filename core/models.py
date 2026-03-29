@@ -238,27 +238,6 @@ class Message(Base):
     deleted_by_recipient = Column(Boolean, default=False)
 
 
-class PremiumMembership(Base):
-    __tablename__ = "premium_memberships"
-
-    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, unique=True, index=True)
-
-    tier = Column(String(32), default="standard", nullable=False, index=True)
-    status = Column(String(32), default="inactive", nullable=False, index=True)
-
-    wallet_address = Column(String(255), nullable=True)
-    preferred_asset = Column(String(32), nullable=True)
-    preferred_network = Column(String(32), nullable=True)
-
-    monthly_fee_usd = Column(Numeric(12, 2), default=Decimal("5.00"), nullable=False)
-    activated_at = Column(DateTime(timezone=True), nullable=True)
-    expires_at = Column(DateTime(timezone=True), nullable=True)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-
-
 class GiftTransfer(Base):
     __tablename__ = "gift_transfers"
 

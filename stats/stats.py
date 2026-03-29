@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 
 from core.models import Game, GiftTransfer, User
 from core.ratings import get_rating_snapshot, normalize_time_control
-from premium.service import get_membership_payload
 
 
 def get_dashboard_stats(db: Session, user_id: str):
@@ -52,8 +51,6 @@ def get_dashboard_stats(db: Session, user_id: str):
     }
     current_rating = rating_stats["overall"]
 
-    membership = get_membership_payload(db, user_id)
-
     sent_gifts = db.query(GiftTransfer).filter(GiftTransfer.sender_id == user_id).count()
     received_gifts = db.query(GiftTransfer).filter(GiftTransfer.recipient_id == user_id).count()
     redeemed_gifts = (
@@ -100,8 +97,6 @@ def get_dashboard_stats(db: Session, user_id: str):
         "totalEarnings": 0.0,
         "currentRating": int(current_rating),
         "ratingStats": rating_stats,
-        "isPremium": membership["isPremium"],
-        "membershipTier": membership["membershipTier"],
         "giftActivity": {
             "sent": int(sent_gifts),
             "received": int(received_gifts),

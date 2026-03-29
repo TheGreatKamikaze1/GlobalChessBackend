@@ -26,11 +26,6 @@ class ProfileData(BaseModel):
     ratingStats: RatingStats
     createdAt: Optional[datetime] = None
     updatedAt: Optional[datetime] = None
-    isPremium: bool = False
-    membershipTier: str = "standard"
-    walletAddress: Optional[str] = None
-    premiumSince: Optional[datetime] = None
-    giftingEnabled: bool = False
     sentGiftCount: int = 0
     receivedGiftCount: int = 0
 
@@ -53,11 +48,6 @@ class MeData(BaseModel):
     ratingStats: RatingStats
     createdAt: Optional[datetime] = None
     updatedAt: Optional[datetime] = None
-    isPremium: bool = False
-    membershipTier: str = "standard"
-    walletAddress: Optional[str] = None
-    premiumSince: Optional[datetime] = None
-    giftingEnabled: bool = False
     sentGiftCount: int = 0
     receivedGiftCount: int = 0
 

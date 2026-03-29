@@ -10,7 +10,6 @@ class UserMiniOut(BaseModel):
     displayName: str
     avatarUrl: Optional[str] = None
     rating: int = 1200
-    isPremium: bool = False
 
 
 

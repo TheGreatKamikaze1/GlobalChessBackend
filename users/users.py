@@ -10,7 +10,6 @@ from core.database import get_db
 from core.models import GiftTransfer, User
 from core.rating_schemas import RatingStats
 from core.ratings import get_rating_snapshot
-from premium.service import get_membership_payload
 from users.users_schema import (
     AuthStatusResponse,
     BalanceResponse,
@@ -32,8 +31,6 @@ class PublicUserData(BaseModel):
     rating: int
     ratingStats: RatingStats
     createdAt: Optional[datetime] = None
-    isPremium: bool = False
-    membershipTier: str = "standard"
 
 
 class PublicUserResponse(BaseModel):
@@ -51,7 +48,6 @@ def _gift_counts(db: Session, user_id: str) -> dict:
 
 
 def _profile_payload(db: Session, user: User) -> dict:
-    membership = get_membership_payload(db, str(user.id))
     gift_counts = _gift_counts(db, str(user.id))
     rating_stats = get_rating_snapshot(user)
 
@@ -68,7 +64,6 @@ def _profile_payload(db: Session, user: User) -> dict:
         "ratingStats": rating_stats,
         "createdAt": user.created_at,
         "updatedAt": user.updated_at,
-        **membership,
         **gift_counts,
     }
 
@@ -169,7 +164,6 @@ def get_user_by_id(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    membership = get_membership_payload(db, user_id)
     rating_stats = get_rating_snapshot(user)
 
     return {
@@ -183,7 +177,5 @@ def get_user_by_id(
             "rating": rating_stats["overall"],
             "ratingStats": rating_stats,
             "createdAt": user.created_at,
-            "isPremium": membership["isPremium"],
-            "membershipTier": membership["membershipTier"],
         },
     }

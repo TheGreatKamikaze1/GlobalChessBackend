@@ -32,8 +32,6 @@ class DashboardStats(BaseModel):
     totalEarnings: float
     currentRating: int
     ratingStats: RatingStats
-    isPremium: bool
-    membershipTier: str
     giftActivity: GiftActivity
     recentGames: List[RecentGame]
 

@@ -8,7 +8,6 @@ from core.models import User
 from core.ratings import get_rating_snapshot
 from users.auth_schema import RegisterSchema, LoginSchema
 from core.auth import create_token
-from premium.service import get_membership_payload
 
 router = APIRouter(tags=["Auth"])
 
@@ -65,7 +64,6 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email or username already in use")
 
     token = create_token({"id": new_user.id, "email": new_user.email})
-    membership = get_membership_payload(db, new_user.id)
     rating_stats = get_rating_snapshot(new_user)
 
     return {
@@ -84,7 +82,6 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
                 "ratingStats": rating_stats,
                 "createdAt": new_user.created_at,
                 "updatedAt": new_user.updated_at,
-                **membership,
             },
             "token": token,
         },
@@ -105,7 +102,6 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token({"id": user.id, "email": user.email})
-    membership = get_membership_payload(db, user.id)
     rating_stats = get_rating_snapshot(user)
 
     return {
@@ -124,7 +120,6 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
                 "ratingStats": rating_stats,
                 "createdAt": user.created_at,
                 "updatedAt": user.updated_at,
-                **membership,
             },
             "token": token,
         },
