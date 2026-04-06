@@ -16,6 +16,24 @@ class CreateChallengeSchema(BaseModel):
     rated: bool = Field(True, description="Whether this challenge should affect player ratings.")
 
 
+class MatchmakeResponseData(BaseModel):
+    matched: bool
+    status: Literal["MATCHED", "QUEUED"]
+    challengeId: str
+    gameId: Optional[str] = None
+    message: str
+    createdAt: datetime
+    expiresAt: datetime
+    timeControl: str
+    isRated: bool
+    ratingCategory: str
+
+
+class MatchmakeResponse(BaseModel):
+    success: bool = True
+    data: MatchmakeResponseData
+
+
 class UserMini(BaseModel):
     id: str
     username: str
