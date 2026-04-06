@@ -60,6 +60,10 @@ def can_abort_game(game: Game) -> bool:
     return game.status == "ONGOING" and len(_load_moves(game)) < EARLY_ABORT_PLY_LIMIT
 
 
+def can_auto_abort_game(game: Game) -> bool:
+    return game.status == "ONGOING" and len(_load_moves(game)) == 0
+
+
 def get_auto_abort_deadline(game: Game) -> datetime | None:
     started_at = _utc_datetime(getattr(game, "started_at", None))
     if started_at is None:
@@ -89,7 +93,7 @@ def refund_game_stake(db: Session, game: Game) -> None:
 
 
 def maybe_auto_abort_game(db: Session, game: Game) -> bool:
-    if not can_abort_game(game):
+    if not can_auto_abort_game(game):
         return False
 
     deadline = get_auto_abort_deadline(game)
@@ -172,15 +176,17 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
     if not game:
         return {"error": "GAME_NOT_FOUND"}
 
+    if maybe_auto_abort_game(db, game):
+        db.commit()
+        return {"error": "GAME_ABORTED"}
+
     if game.status != "ONGOING":
+        if getattr(game, "result", None) == "ABORTED":
+            return {"error": "GAME_ABORTED"}
         return {"error": "GAME_NOT_ACTIVE"}
 
     if not any(_same_user(user_id, participant_id) for participant_id in (game.white_id, game.black_id)):
         return {"error": "NOT_PARTICIPANT"}
-
-    if maybe_auto_abort_game(db, game):
-        db.commit()
-        return {"error": "GAME_ABORTED"}
 
     board, moves_list = _build_board(game)
     is_white_player = _same_user(user_id, game.white_id)

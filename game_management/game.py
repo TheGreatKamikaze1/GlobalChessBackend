@@ -363,16 +363,21 @@ def make_move(
     if "error" in result:
         err = result["error"]
         if err == "GAME_NOT_FOUND":
-            raise HTTPException(status_code=404, detail=err)
+            raise HTTPException(status_code=404, detail="Game not found")
         if err == "NOT_PARTICIPANT":
-            raise HTTPException(status_code=403, detail=err)
+            raise HTTPException(status_code=403, detail="You are not a participant in this game")
         if err == "NOT_YOUR_TURN":
-            raise HTTPException(status_code=409, detail=err)
+            raise HTTPException(status_code=409, detail="It is not your turn")
         if err == "GAME_ABORTED":
-            raise HTTPException(status_code=409, detail=err)
+            raise HTTPException(
+                status_code=409,
+                detail="Game was aborted because no opening move was made in time",
+            )
+        if err == "GAME_NOT_ACTIVE":
+            raise HTTPException(status_code=409, detail="Game has already ended")
         if err == "PLAYER_NOT_FOUND":
-            raise HTTPException(status_code=404, detail=err)
-        raise HTTPException(status_code=400, detail=err)
+            raise HTTPException(status_code=404, detail="Player not found")
+        raise HTTPException(status_code=400, detail="Move was invalid")
 
     return {
         "gameId": game_id,
