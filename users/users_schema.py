@@ -22,6 +22,9 @@ class ProfileData(BaseModel):
     displayName: Optional[str] = None
     avatarUrl: Optional[str] = None
     balance: float
+    walletAddress: Optional[str] = None
+    walletNetwork: Optional[str] = None
+    walletVerifiedAt: Optional[datetime] = None
     rating: int
     ratingStats: RatingStats
     createdAt: Optional[datetime] = None
@@ -44,6 +47,9 @@ class MeData(BaseModel):
     displayName: Optional[str] = None
     avatarUrl: Optional[str] = None
     balance: float
+    walletAddress: Optional[str] = None
+    walletNetwork: Optional[str] = None
+    walletVerifiedAt: Optional[datetime] = None
     rating: int
     ratingStats: RatingStats
     createdAt: Optional[datetime] = None

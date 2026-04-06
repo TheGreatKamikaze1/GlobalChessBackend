@@ -29,6 +29,10 @@ router = APIRouter(tags=["Games"])
 _UCI_RE = re.compile(r"^[a-h][1-8][a-h][1-8][qrbn]?$", re.IGNORECASE)
 
 
+def _same_user(left: str | None, right: str | None) -> bool:
+    return str(left or "") == str(right or "")
+
+
 def get_game_or_404(db: Session, game_id: str) -> Game:
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
@@ -37,7 +41,7 @@ def get_game_or_404(db: Session, game_id: str) -> Game:
 
 
 def check_participant(game: Game, user_id: str):
-    if user_id not in (game.white_id, game.black_id):
+    if not any(_same_user(user_id, participant_id) for participant_id in (game.white_id, game.black_id)):
         raise HTTPException(status_code=403, detail="Not a participant")
 
 
@@ -160,9 +164,11 @@ def active_games(
 
     items = []
     for g in games:
-        opponent = g.black if g.white_id == user_id else g.white
+        player_color = "white" if _same_user(g.white_id, user_id) else "black"
+        opponent = g.black if player_color == "white" else g.white
         moves = json.loads(g.moves or "[]")
-        opponent_color = "black" if g.white_id == user_id else "white"
+        current_turn = get_current_turn(moves)
+        opponent_color = "black" if player_color == "white" else "white"
         opponent_rating = getattr(g, f"{opponent_color}_rating_before", None)
         if opponent_rating is None:
             opponent_rating = get_user_rating(opponent, _game_rating_category(g))
@@ -182,7 +188,9 @@ def active_games(
                     ratingCategory=_game_rating_category(g),
                     status=g.status,
                     startedAt=g.started_at,
-                    currentTurn=get_current_turn(moves),
+                    currentTurn=current_turn,
+                    playerColor=player_color,
+                    yourTurn=current_turn == player_color,
                 )
         )
 

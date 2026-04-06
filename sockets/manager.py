@@ -10,14 +10,23 @@ class ConnectionManager:
         self.active_games.setdefault(game_id, []).append(websocket)
 
     def disconnect(self, game_id: str, websocket: WebSocket):
-        self.active_games[game_id].remove(websocket)
-        if not self.active_games[game_id]:
-            del self.active_games[game_id]
+        sockets = self.active_games.get(game_id)
+        if not sockets:
+            return
+
+        if websocket in sockets:
+            sockets.remove(websocket)
+
+        if not sockets:
+            self.active_games.pop(game_id, None)
 
     async def broadcast(self, game_id: str, message: dict, sender: WebSocket):
-        for ws in self.active_games.get(game_id, []):
+        for ws in list(self.active_games.get(game_id, [])):
             if ws != sender:
-                await ws.send_json(message)
+                try:
+                    await ws.send_json(message)
+                except Exception:
+                    self.disconnect(game_id, ws)
                 
 MAX_CONNECTIONS = 10
 user_connections = {}

@@ -25,6 +25,9 @@ class User(Base):
     bio = Column(Text, nullable=True)
 
     balance = Column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
+    wallet_address = Column(String(255), nullable=True, index=True)
+    wallet_network = Column(String(32), nullable=True)
+    wallet_verified_at = Column(DateTime(timezone=True), nullable=True)
 
     avatar_url = Column(String, nullable=True)
     games_played = Column(Integer, default=0, nullable=False)
@@ -291,5 +294,63 @@ class CryptoRequest(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     confirmed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PuzzleQueue(Base):
+    __tablename__ = "puzzle_queues"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+
+    queue_date = Column(String(10), nullable=False, index=True)
+    mode = Column(String(16), default="mixed", nullable=False)
+    total_count = Column(Integer, default=20, nullable=False)
+    consumed_count = Column(Integer, default=0, nullable=False)
+    target_rating = Column(Integer, nullable=True)
+
+    selection_summary = Column(Text, nullable=False, default="{}")
+    puzzle_ids = Column(Text, nullable=False, default="[]")
+
+    generated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "queue_date", name="uq_puzzle_queue_user_day"),
+        Index("ix_puzzle_queue_user_day_lookup", "user_id", "queue_date"),
+    )
+
+
+class PuzzleAttempt(Base):
+    __tablename__ = "puzzle_attempts"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    queue_id = Column(String(36), ForeignKey("puzzle_queues.id"), nullable=False, index=True)
+
+    queue_position = Column(Integer, nullable=False)
+    puzzle_id = Column(String(64), nullable=False, index=True)
+    source_puzzle_id = Column(String(64), nullable=False, index=True)
+
+    status = Column(String(16), default="served", nullable=False, index=True)
+    progress_ply = Column(Integer, default=0, nullable=False)
+    position_fen = Column(Text, nullable=False)
+    feedback = Column(Text, nullable=True)
+    last_move = Column(String(16), nullable=True)
+
+    mistakes = Column(Integer, default=0, nullable=False)
+    hints_used = Column(Integer, default=0, nullable=False)
+    retry_count = Column(Integer, default=0, nullable=False)
+    first_attempt_correct = Column(Boolean, default=True, nullable=False)
+    rating_delta = Column(Integer, default=0, nullable=False)
+
+    active_hint_level = Column(Integer, nullable=True)
+    played_line = Column(Text, nullable=False, default="[]")
+
+    served_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_puzzle_attempt_user_served", "user_id", "served_at"),
+        Index("ix_puzzle_attempt_queue_position", "queue_id", "queue_position"),
+    )
 
 

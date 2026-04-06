@@ -21,6 +21,29 @@ def _starting_fen(game: Game) -> str:
     return fen if fen else chess.STARTING_FEN
 
 
+def _same_user(left: str | None, right: str | None) -> bool:
+    return str(left or "") == str(right or "")
+
+
+def _build_board(game: Game) -> tuple[chess.Board, list[str]]:
+    moves = _load_moves(game)
+
+    if moves:
+        board = chess.Board()
+
+        try:
+            for move in moves:
+                board.push(chess.Move.from_uci(str(move).strip().lower()))
+            return board, moves
+        except Exception:
+            pass
+
+    try:
+        return chess.Board(_starting_fen(game)), moves
+    except Exception:
+        return chess.Board(), moves
+
+
 def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None, str | None]:
    
     side_to_move = board.turn 
@@ -95,11 +118,11 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
     if game.status != "ONGOING":
         return {"error": "GAME_NOT_ACTIVE"}
 
-    if user_id not in (game.white_id, game.black_id):
+    if not any(_same_user(user_id, participant_id) for participant_id in (game.white_id, game.black_id)):
         return {"error": "NOT_PARTICIPANT"}
 
-    board = chess.Board(_starting_fen(game))
-    is_white_player = (user_id == game.white_id)
+    board, moves_list = _build_board(game)
+    is_white_player = _same_user(user_id, game.white_id)
 
     
     if (board.turn == chess.WHITE and not is_white_player) or (board.turn == chess.BLACK and is_white_player):
@@ -110,8 +133,6 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
         move, uci, san = _parse_move(board, move_text)
     except ValueError:
         return {"error": "INVALID_FORMAT_OR_ILLEGAL"}
-
-    moves_list = _load_moves(game)
 
     board.push(move)
     moves_list.append(uci)

@@ -109,6 +109,8 @@ class ActiveGameItem(BaseModel):
     status: str
     startedAt: datetime
     currentTurn: Literal["white", "black"]
+    playerColor: Literal["white", "black"]
+    yourTurn: bool
 
 
 class ActiveGamesResponse(BaseModel):

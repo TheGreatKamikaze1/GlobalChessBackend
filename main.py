@@ -17,6 +17,8 @@ from social.chat import router as chat_router
 from sockets.voice_chat import voice_router
 from sockets.game_socket import game_socket
 from gifts.router import router as gifts_router
+from puzzles.router import router as puzzles_router
+from crypto_payments.router import router as crypto_router
 
 
 app = FastAPI(
@@ -56,6 +58,8 @@ app.include_router(friends_router)
 app.include_router(chat_router)
 app.include_router(voice_router)
 app.include_router(gifts_router, prefix="/api/gifts", tags=["Gifts"])
+app.include_router(puzzles_router, prefix="/api/puzzles", tags=["Puzzles"])
+app.include_router(crypto_router, prefix="/api/crypto", tags=["Crypto"])
 
 
 @app.websocket("/ws/game")
@@ -66,3 +70,4 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/api/health")
 def health_check():
     return {"status": "healthy", "service": "Global Chess API"}
+

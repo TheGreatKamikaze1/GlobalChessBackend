@@ -6,7 +6,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError
 
 from core.database import SessionLocal, engine
-from core.models import Base, Challenge, Game, User
+from core.models import Base, Challenge, Game, PuzzleAttempt, PuzzleQueue, User
 from core.ratings import (
     determine_rating_category,
     get_rating_snapshot,
@@ -21,6 +21,9 @@ SCHEMA_PATCHES: dict[str, dict[str, str]] = {
         "blitz_rating": "INTEGER NOT NULL DEFAULT 1200",
         "rapid_rating": "INTEGER NOT NULL DEFAULT 1200",
         "classical_rating": "INTEGER NOT NULL DEFAULT 1200",
+        "wallet_address": "VARCHAR(255)",
+        "wallet_network": "VARCHAR(32)",
+        "wallet_verified_at": "TIMESTAMP WITH TIME ZONE",
     },
     "challenges": {
         "is_rated": "BOOLEAN NOT NULL DEFAULT TRUE",
