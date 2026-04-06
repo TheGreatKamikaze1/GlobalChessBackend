@@ -176,6 +176,7 @@ def active_games(
         items.append(
                 ActiveGameItem(
                     id=str(g.id),
+                    challengeId=str(g.challenge_id) if g.challenge_id else None,
                     opponent=PlayerDetails(
                         id=str(opponent.id),
                         username=opponent.username,
@@ -310,6 +311,7 @@ def get_game(game_id: str, db: Session = Depends(get_db)):
 
     return {
         "id": str(game.id),
+        "challengeId": str(game.challenge_id) if game.challenge_id else None,
         "white": _player_details(game.white, game, "white"),
         "black": _player_details(game.black, game, "black"),
         "stake": 0.0,

@@ -41,6 +41,7 @@ class PremoveRequest(BaseModel):
 
 class GameResponse(BaseModel):
     id: str
+    challengeId: Optional[str] = None
     white: PlayerDetails
     black: PlayerDetails
     stake: float
@@ -101,6 +102,7 @@ class PaginatedHistory(BaseModel):
 
 class ActiveGameItem(BaseModel):
     id: str
+    challengeId: Optional[str] = None
     opponent: PlayerDetails
     stake: float
     timeControl: str
