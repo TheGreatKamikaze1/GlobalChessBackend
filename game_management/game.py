@@ -8,12 +8,13 @@ from core.database import get_db
 from core.models import Game, User
 from core.ratings import determine_rating_category, get_user_rating, normalize_time_control
 from game_management.dependencies import get_current_user_id_dep
-from game_management.logic import process_move
+from game_management.logic import abort_game, can_abort_game, maybe_auto_abort_game, process_move, refund_game_stake
 from game_management.ratings import apply_game_result, build_game_rating_payload
 from game_management.game_schema import (
     GameResponse,
     MoveRequest,
     MoveResponse,
+    AbortResponse,
     ResignResponse,
     PaginatedHistory,
     ActiveGamesResponse,
@@ -101,7 +102,9 @@ def game_history(
     for g in games:
         opponent = g.black if g.white_id == user_id else g.white
         result = (
-            "DRAW"
+            "ABORTED"
+            if g.result == "ABORTED"
+            else "DRAW"
             if g.result == "DRAW"
             else "WIN"
             if g.winner_id == user_id
@@ -163,7 +166,12 @@ def active_games(
     )
 
     items = []
+    auto_aborted = False
     for g in games:
+        if maybe_auto_abort_game(db, g):
+            auto_aborted = True
+            continue
+
         player_color = "white" if _same_user(g.white_id, user_id) else "black"
         opponent = g.black if player_color == "white" else g.white
         moves = json.loads(g.moves or "[]")
@@ -195,6 +203,9 @@ def active_games(
                 )
         )
 
+    if auto_aborted:
+        db.commit()
+
     return {"success": True, "data": items}
 
 
@@ -211,7 +222,11 @@ def all_games(
     )
 
     response = []
+    auto_aborted = False
     for g in games:
+        if maybe_auto_abort_game(db, g):
+            auto_aborted = True
+
         opponent = g.black if g.white_id == user_id else g.white
         moves = json.loads(g.moves or "[]")
 
@@ -219,7 +234,9 @@ def all_games(
             result = "ongoing"
             date = g.started_at
         else:
-            if g.result == "DRAW":
+            if g.result == "ABORTED":
+                result = "aborted"
+            elif g.result == "DRAW":
                 result = "draw"
             elif g.winner_id == user_id:
                 result = "won"
@@ -237,6 +254,9 @@ def all_games(
                 "moves": len(moves),
             }
         )
+
+    if auto_aborted:
+        db.commit()
 
     return {"success": True, "data": response}
 
@@ -307,6 +327,8 @@ def get_my_premove(
 @router.get("/{game_id}", response_model=GameResponse)
 def get_game(game_id: str, db: Session = Depends(get_db)):
     game = get_game_or_404(db, game_id)
+    if maybe_auto_abort_game(db, game):
+        db.commit()
     moves = json.loads(game.moves or "[]")
 
     return {
@@ -345,6 +367,8 @@ def make_move(
         if err == "NOT_PARTICIPANT":
             raise HTTPException(status_code=403, detail=err)
         if err == "NOT_YOUR_TURN":
+            raise HTTPException(status_code=409, detail=err)
+        if err == "GAME_ABORTED":
             raise HTTPException(status_code=409, detail=err)
         if err == "PLAYER_NOT_FOUND":
             raise HTTPException(status_code=404, detail=err)
@@ -401,4 +425,35 @@ def resign_game(
         "winnerId": winner_id,
         "message": "You resigned. Game over.",
         "rating": rating_payload,
+    }
+
+
+@router.post("/{game_id}/abort", response_model=AbortResponse)
+def abort_live_game(
+    game_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id_dep),
+):
+    game = db.query(Game).filter(Game.id == game_id).with_for_update().first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+
+    check_participant(game, user_id)
+
+    if game.status != "ONGOING":
+        raise HTTPException(400, "Game already ended")
+
+    if not can_abort_game(game):
+        raise HTTPException(400, "Abort is only available before both players make their first move")
+
+    abort_game(game)
+    refund_game_stake(db, game)
+    db.commit()
+
+    return {
+        "gameId": game_id,
+        "result": "ABORTED",
+        "winnerId": None,
+        "message": "Game aborted before both sides completed their opening move.",
+        "rating": None,
     }

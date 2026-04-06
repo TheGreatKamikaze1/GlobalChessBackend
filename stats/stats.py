@@ -9,6 +9,7 @@ def get_dashboard_stats(db: Session, user_id: str):
     base = db.query(Game).filter(
         or_(Game.white_id == user_id, Game.black_id == user_id),
         Game.status == "COMPLETED",
+        Game.result != "ABORTED",
     )
 
     total_games = base.count()
@@ -18,6 +19,7 @@ def get_dashboard_stats(db: Session, user_id: str):
         .filter(
             or_(Game.white_id == user_id, Game.black_id == user_id),
             Game.status == "COMPLETED",
+            Game.result != "ABORTED",
             or_(
                 (Game.result == "WHITE_WIN") & (Game.white_id == user_id),
                 (Game.result == "BLACK_WIN") & (Game.black_id == user_id),
@@ -32,6 +34,7 @@ def get_dashboard_stats(db: Session, user_id: str):
         .filter(
             or_(Game.white_id == user_id, Game.black_id == user_id),
             Game.status == "COMPLETED",
+            Game.result != "ABORTED",
             Game.result == "DRAW",
         )
         .scalar()

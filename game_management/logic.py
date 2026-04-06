@@ -2,11 +2,13 @@ import chess
 import json
 from sqlalchemy.orm import Session
 from core.models import Game, User
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import re
 from game_management.ratings import apply_game_result
 
 _UCI_RE = re.compile(r"^[a-h][1-8][a-h][1-8][qrbn]?$", re.IGNORECASE)
+EARLY_ABORT_PLY_LIMIT = 2
+AUTO_ABORT_WINDOW_SECONDS = 20
 
 
 def _load_moves(game: Game) -> list[str]:
@@ -23,6 +25,16 @@ def _starting_fen(game: Game) -> str:
 
 def _same_user(left: str | None, right: str | None) -> bool:
     return str(left or "") == str(right or "")
+
+
+def _utc_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+
+    return value.astimezone(timezone.utc)
 
 
 def _build_board(game: Game) -> tuple[chess.Board, list[str]]:
@@ -42,6 +54,51 @@ def _build_board(game: Game) -> tuple[chess.Board, list[str]]:
         return chess.Board(_starting_fen(game)), moves
     except Exception:
         return chess.Board(), moves
+
+
+def can_abort_game(game: Game) -> bool:
+    return game.status == "ONGOING" and len(_load_moves(game)) < EARLY_ABORT_PLY_LIMIT
+
+
+def get_auto_abort_deadline(game: Game) -> datetime | None:
+    started_at = _utc_datetime(getattr(game, "started_at", None))
+    if started_at is None:
+        return None
+
+    return started_at + timedelta(seconds=AUTO_ABORT_WINDOW_SECONDS)
+
+
+def abort_game(game: Game) -> None:
+    game.status = "COMPLETED"
+    game.result = "ABORTED"
+    game.winner_id = None
+    game.completed_at = datetime.now(timezone.utc)
+    game.premove_white = None
+    game.premove_black = None
+
+
+def refund_game_stake(db: Session, game: Game) -> None:
+    stake = float(game.stake or 0)
+    if stake <= 0:
+        return
+
+    db.query(User).filter(User.id.in_([game.white_id, game.black_id])).update(
+        {User.balance: User.balance + game.stake},
+        synchronize_session=False,
+    )
+
+
+def maybe_auto_abort_game(db: Session, game: Game) -> bool:
+    if not can_abort_game(game):
+        return False
+
+    deadline = get_auto_abort_deadline(game)
+    if deadline is None or datetime.now(timezone.utc) < deadline:
+        return False
+
+    abort_game(game)
+    refund_game_stake(db, game)
+    return True
 
 
 def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None, str | None]:
@@ -120,6 +177,10 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
 
     if not any(_same_user(user_id, participant_id) for participant_id in (game.white_id, game.black_id)):
         return {"error": "NOT_PARTICIPANT"}
+
+    if maybe_auto_abort_game(db, game):
+        db.commit()
+        return {"error": "GAME_ABORTED"}
 
     board, moves_list = _build_board(game)
     is_white_player = _same_user(user_id, game.white_id)

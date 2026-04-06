@@ -79,6 +79,14 @@ class ResignResponse(BaseModel):
     rating: Optional[RatingState] = None
 
 
+class AbortResponse(BaseModel):
+    gameId: str
+    result: str
+    winnerId: Optional[str] = None
+    message: str
+    rating: Optional[RatingState] = None
+
+
 class GameHistoryItem(BaseModel):
     id: str
     opponent: PlayerDetails
