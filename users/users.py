@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from core.auth import get_current_user_id
 from core.database import get_db
+from core.economy import money_to_float
 from core.models import GiftTransfer, User
 from core.rating_schemas import RatingStats
 from core.ratings import get_rating_snapshot
@@ -59,7 +60,7 @@ def _profile_payload(db: Session, user: User) -> dict:
         "bio": user.bio,
         "displayName": user.display_name,
         "avatarUrl": user.avatar_url,
-        "balance": 0.0,
+        "balance": money_to_float(user.balance),
         "walletAddress": user.wallet_address,
         "walletNetwork": user.wallet_network,
         "walletVerifiedAt": user.wallet_verified_at,
@@ -143,7 +144,7 @@ def get_balance(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return {"success": True, "data": {"balance": 0.0, "currency": "USD"}}
+    return {"success": True, "data": {"balance": money_to_float(user.balance), "currency": "USD"}}
 
 
 @router.get("/auth-status", response_model=AuthStatusResponse)

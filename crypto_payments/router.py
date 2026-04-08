@@ -8,19 +8,24 @@ from core.database import get_db
 from core.models import CryptoRequest, User
 from crypto_payments.schemas import (
     CreateCryptoGiftCheckoutRequest,
+    CreateCryptoWalletCheckoutRequest,
     CryptoConfigResponse,
     CryptoGiftCheckoutResponse,
     CryptoRequestListResponse,
     CryptoRequestResponse,
+    CryptoWalletCheckoutResponse,
     SubmitCryptoPaymentRequest,
 )
 from crypto_payments.service import (
     build_checkout_response,
     build_crypto_request_payload,
+    build_wallet_checkout_response,
     create_gift_checkout,
+    create_wallet_checkout,
     mark_request_submitted,
     serialize_supported_networks,
     settle_verified_gift_request,
+    settle_verified_wallet_request,
     verify_request_transaction,
 )
 
@@ -74,6 +79,23 @@ def create_crypto_gift_checkout(
     return {"success": True, "data": build_checkout_response(request)}
 
 
+@router.post("/wallets/checkout", response_model=CryptoWalletCheckoutResponse)
+def create_crypto_wallet_checkout(
+    payload: CreateCryptoWalletCheckoutRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    request = create_wallet_checkout(
+        db=db,
+        current_user=current_user,
+        amount_usd=payload.amountUsd,
+        network_key=payload.network,
+        asset_symbol=payload.asset,
+    )
+
+    return {"success": True, "data": build_wallet_checkout_response(request)}
+
+
 def _get_owned_request(db: Session, reference: str, user_id: str) -> CryptoRequest:
     request = (
         db.query(CryptoRequest)
@@ -101,13 +123,22 @@ async def submit_crypto_payment(
     )
 
     if verification["state"] == "COMPLETED":
-        request = settle_verified_gift_request(
-            db=db,
-            request=request,
-            from_address=verification["fromAddress"],
-            tx_hash=payload.txHash,
-            detail=verification["detail"],
-        )
+        if request.kind == "WALLET_DEPOSIT":
+            request = settle_verified_wallet_request(
+                db=db,
+                request=request,
+                from_address=verification["fromAddress"],
+                tx_hash=payload.txHash,
+                detail=verification["detail"],
+            )
+        else:
+            request = settle_verified_gift_request(
+                db=db,
+                request=request,
+                from_address=verification["fromAddress"],
+                tx_hash=payload.txHash,
+                detail=verification["detail"],
+            )
     else:
         request = mark_request_submitted(
             db=db,
@@ -143,13 +174,22 @@ async def verify_crypto_payment(
     )
 
     if verification["state"] == "COMPLETED":
-        request = settle_verified_gift_request(
-            db=db,
-            request=request,
-            from_address=verification["fromAddress"],
-            tx_hash=tx_hash,
-            detail=verification["detail"],
-        )
+        if request.kind == "WALLET_DEPOSIT":
+            request = settle_verified_wallet_request(
+                db=db,
+                request=request,
+                from_address=verification["fromAddress"],
+                tx_hash=tx_hash,
+                detail=verification["detail"],
+            )
+        else:
+            request = settle_verified_gift_request(
+                db=db,
+                request=request,
+                from_address=verification["fromAddress"],
+                tx_hash=tx_hash,
+                detail=verification["detail"],
+            )
     else:
         request = mark_request_submitted(
             db=db,

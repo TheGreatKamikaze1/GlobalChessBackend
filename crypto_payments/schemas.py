@@ -46,6 +46,12 @@ class CreateCryptoGiftCheckoutRequest(BaseModel):
     asset: str = Field(default="USDC", min_length=1, max_length=16)
 
 
+class CreateCryptoWalletCheckoutRequest(BaseModel):
+    amountUsd: float = Field(..., gt=0, le=1000000)
+    network: str = Field(default="BASE", min_length=1, max_length=32)
+    asset: str = Field(default="USDC", min_length=1, max_length=16)
+
+
 class SubmitCryptoPaymentRequest(BaseModel):
     txHash: str = Field(..., min_length=66, max_length=80)
     fromAddress: Optional[str] = Field(default=None, min_length=42, max_length=42)
@@ -89,6 +95,27 @@ class CryptoGiftCheckoutResponse(BaseModel):
     data: CryptoGiftCheckoutData
 
 
+class CryptoWalletCheckoutData(BaseModel):
+    reference: str
+    status: str
+    network: str
+    asset: str
+    amountUsd: float
+    amountCrypto: str
+    treasuryAddress: str
+    explorerUrl: str
+    tokenContractAddress: str
+    tokenDecimals: int
+    tokenName: str
+    paymentTransaction: EvmTransactionOut
+    purpose: str
+
+
+class CryptoWalletCheckoutResponse(BaseModel):
+    success: bool = True
+    data: CryptoWalletCheckoutData
+
+
 class CryptoRequestGiftOut(BaseModel):
     id: str
     name: str
@@ -102,6 +129,7 @@ class CryptoRequestOut(BaseModel):
     reference: str
     kind: str
     status: str
+    purpose: Optional[str] = None
     asset: Optional[str] = None
     network: Optional[str] = None
     walletAddress: Optional[str] = None

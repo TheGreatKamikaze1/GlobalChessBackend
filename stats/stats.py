@@ -1,7 +1,8 @@
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from core.models import Game, GiftTransfer, User
+from core.economy import money_to_float
+from core.models import Game, GiftTransfer, Transaction, User
 from core.ratings import get_rating_snapshot, normalize_time_control
 
 
@@ -77,7 +78,7 @@ def get_dashboard_stats(db: Session, user_id: str):
                 "id": str(game.id),
                 "opponent": opponent.username if opponent else "Unknown",
                 "result": "WIN" if is_win else ("DRAW" if game.result == "DRAW" else "LOSS"),
-                "stake": 0.0,
+                "stake": money_to_float(game.stake),
                 "timeControl": normalize_time_control(getattr(game, "time_control", None)),
                 "isRated": bool(getattr(game, "is_rated", True)),
                 "ratingCategory": getattr(game, "rating_category", "blitz"),
@@ -96,8 +97,13 @@ def get_dashboard_stats(db: Session, user_id: str):
         "losses": int(losses),
         "draws": int(draws),
         "winRate": float(win_rate),
-        "currentBalance": 0.0,
-        "totalEarnings": 0.0,
+        "currentBalance": money_to_float(user.balance if user else 0),
+        "totalEarnings": money_to_float(
+            db.query(func.coalesce(func.sum(Transaction.amount), 0))
+            .filter(Transaction.user_id == user_id, Transaction.type == "STAKE_WIN")
+            .scalar()
+            or 0
+        ),
         "currentRating": int(current_rating),
         "ratingStats": rating_stats,
         "giftActivity": {

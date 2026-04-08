@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from core.models import CryptoRequest, GiftTransfer, User
+from core.economy import credit_user_balance, create_transaction_record
 from crypto_payments.config import (
     NetworkConfig,
     get_asset_config,
@@ -113,6 +114,7 @@ def build_crypto_request_payload(request: CryptoRequest) -> dict[str, Any]:
         "updatedAt": request.updated_at,
         "confirmedAt": request.confirmed_at,
         "linkedGiftTransferId": request.linked_gift_transfer_id,
+        "purpose": meta.get("purpose"),
         "gift": (
             {
                 "id": gift_meta.get("giftId", ""),
@@ -155,6 +157,28 @@ def build_checkout_response(request: CryptoRequest) -> dict[str, Any]:
             "description": gift_meta.get("description"),
             "priceUsd": float(request.amount_usd),
         },
+    }
+
+
+def build_wallet_checkout_response(request: CryptoRequest) -> dict[str, Any]:
+    meta = request.meta or {}
+    payment_meta = meta.get("payment") or {}
+    purpose_meta = meta.get("walletDeposit") or {}
+
+    return {
+        "reference": request.reference,
+        "status": request.status,
+        "network": request.network,
+        "asset": request.asset,
+        "amountUsd": float(request.amount_usd),
+        "amountCrypto": request.amount_crypto,
+        "treasuryAddress": payment_meta.get("treasuryAddress"),
+        "explorerUrl": payment_meta.get("explorerUrl"),
+        "tokenContractAddress": payment_meta.get("tokenContractAddress"),
+        "tokenDecimals": payment_meta.get("tokenDecimals"),
+        "tokenName": payment_meta.get("tokenName"),
+        "paymentTransaction": payment_meta.get("transaction"),
+        "purpose": purpose_meta.get("purpose") or "wallet_deposit",
     }
 
 
@@ -233,6 +257,74 @@ def create_gift_checkout(
                 "recipientId": str(recipient.id),
                 "recipientUsername": recipient.username,
                 "note": (note or "").strip() or None,
+            },
+        },
+    )
+
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+    return request
+
+
+def create_wallet_checkout(
+    *,
+    db: Session,
+    current_user: User,
+    amount_usd: float,
+    network_key: str,
+    asset_symbol: str,
+) -> CryptoRequest:
+    network = get_network_config(network_key)
+    asset = get_asset_config(network_key, asset_symbol)
+
+    if not network.treasury_address:
+        raise HTTPException(
+            status_code=500,
+            detail=f"{network.name} treasury wallet is not configured on the server",
+        )
+
+    amount_value = Decimal(str(amount_usd))
+    amount_crypto = (amount_value / asset.usd_price).quantize(
+        Decimal(1) / (Decimal(10) ** asset.decimals),
+        rounding=ROUND_HALF_UP,
+    )
+    amount_base_units = decimal_to_base_units(amount_crypto, asset.decimals)
+    reference = f"cw_{uuid.uuid4().hex[:18]}"
+
+    transaction_payload = {
+        "chainIdHex": network.chain_id_hex,
+        "to": asset.contract_address,
+        "value": "0x0",
+        "data": encode_erc20_transfer_data(network.treasury_address, amount_base_units),
+    }
+
+    request = CryptoRequest(
+        user_id=current_user.id,
+        linked_gift_transfer_id=None,
+        kind="WALLET_DEPOSIT",
+        reference=reference,
+        status="AWAITING_PAYMENT",
+        asset=asset.symbol,
+        network=network.key,
+        wallet_address=None,
+        amount_usd=amount_value,
+        amount_crypto=format_asset_amount(amount_crypto, asset.decimals),
+        meta={
+            "payment": {
+                "chainId": network.chain_id,
+                "chainIdHex": network.chain_id_hex,
+                "treasuryAddress": network.treasury_address,
+                "tokenContractAddress": asset.contract_address,
+                "tokenDecimals": asset.decimals,
+                "tokenName": asset.name,
+                "explorerUrl": network.explorer_url,
+                "transaction": transaction_payload,
+            },
+            "purpose": "wallet_deposit",
+            "walletDeposit": {
+                "amountUsd": float(amount_value),
+                "purpose": "wallet_deposit",
             },
         },
     )
@@ -359,6 +451,21 @@ def settle_verified_gift_request(
     db.add(gift_transfer)
     db.flush()
 
+    create_transaction_record(
+        db,
+        user_id=str(request.user_id),
+        amount=request.amount_usd,
+        type="CRYPTO_GIFT_PURCHASE",
+        reference=request.reference,
+        provider="crypto",
+        meta={
+            "giftTransferId": str(gift_transfer.id),
+            "fromAddress": from_address,
+            "txHash": tx_hash,
+            "detail": detail,
+        },
+    )
+
     request.linked_gift_transfer_id = str(gift_transfer.id)
     request.wallet_address = from_address
     request.status = "COMPLETED"
@@ -378,6 +485,61 @@ def settle_verified_gift_request(
         user.wallet_address = from_address
         user.wallet_network = request.network
         user.wallet_verified_at = request.confirmed_at
+
+    db.commit()
+    db.refresh(request)
+    return request
+
+
+def settle_verified_wallet_request(
+    *,
+    db: Session,
+    request: CryptoRequest,
+    from_address: str,
+    tx_hash: str,
+    detail: str,
+) -> CryptoRequest:
+    if request.status == "COMPLETED":
+        return request
+
+    user = db.query(User).filter(User.id == request.user_id).with_for_update().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    credit_user_balance(user, request.amount_usd)
+    user.wallet_address = from_address
+    user.wallet_network = request.network
+    user.wallet_verified_at = datetime.now(timezone.utc)
+
+    create_transaction_record(
+        db,
+        user_id=str(user.id),
+        amount=request.amount_usd,
+        type="CRYPTO_DEPOSIT",
+        reference=request.reference,
+        provider="crypto",
+        meta={
+            "purpose": "wallet_deposit",
+            "fromAddress": from_address,
+            "txHash": tx_hash,
+            "detail": detail,
+            "network": request.network,
+            "asset": request.asset,
+        },
+    )
+
+    request.wallet_address = from_address
+    request.status = "COMPLETED"
+    request.confirmed_at = datetime.now(timezone.utc)
+    request.meta = {
+        **(request.meta or {}),
+        "transaction": {
+            **((request.meta or {}).get("transaction") or {}),
+            "txHash": tx_hash,
+            "fromAddress": from_address,
+        },
+        "detail": detail,
+    }
 
     db.commit()
     db.refresh(request)

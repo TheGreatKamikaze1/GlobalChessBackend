@@ -16,7 +16,7 @@ from social.friends import router as friends_router
 from social.chat import router as chat_router
 from sockets.voice_chat import voice_router
 from sockets.game_socket import game_socket
-from gifts.router import router as gifts_router
+from core.gift_wallet_router import router as gifts_router
 from puzzles.router import router as puzzles_router
 from crypto_payments.router import router as crypto_router
 

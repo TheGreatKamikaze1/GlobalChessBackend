@@ -4,6 +4,7 @@ from passlib.context import CryptContext
 from sqlalchemy.exc import IntegrityError
 
 from core.database import get_db
+from core.economy import money_to_float
 from core.models import User
 from core.ratings import get_rating_snapshot
 from users.auth_schema import RegisterSchema, LoginSchema
@@ -77,7 +78,7 @@ def register(req: RegisterSchema, db: Session = Depends(get_db)):
                 "name": new_user.name,
                 "bio": new_user.bio,
                 "avatarUrl": new_user.avatar_url,
-                "balance": 0.0,
+                "balance": money_to_float(new_user.balance),
                 "walletAddress": new_user.wallet_address,
                 "walletNetwork": new_user.wallet_network,
                 "walletVerifiedAt": new_user.wallet_verified_at,
@@ -118,7 +119,7 @@ def login(req: LoginSchema, db: Session = Depends(get_db)):
                 "name": user.name,
                 "bio": user.bio,
                 "avatarUrl": user.avatar_url,
-                "balance": 0.0,
+                "balance": money_to_float(user.balance),
                 "walletAddress": user.wallet_address,
                 "walletNetwork": user.wallet_network,
                 "walletVerifiedAt": user.wallet_verified_at,

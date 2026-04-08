@@ -1,19 +1,27 @@
-from fastapi import APIRouter, HTTPException, Depends, Query, status
-from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
-import secrets
-import chess
 
-from core.database import get_db
-from core.models import User, Challenge, Game
-from core.ratings import determine_rating_category, get_user_rating, normalize_time_control
+import chess
+import secrets
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
+
 from challenges.challenge_schema import (
-    CreateChallengeSchema,
     AvailableChallenge,
     ChallengeList,
+    CreateChallengeSchema,
     MatchmakeResponse,
     UserMini,
 )
+from core.database import get_db
+from core.economy import (
+    create_transaction_record,
+    debit_user_balance,
+    ensure_sufficient_balance,
+    money_to_float,
+    to_money,
+)
+from core.models import Challenge, Game, User
+from core.ratings import determine_rating_category, get_user_rating, normalize_time_control
 from game_management.dependencies import get_current_user_id_dep
 from game_management.ratings import initialize_game_rating_snapshot
 
@@ -30,18 +38,6 @@ def orm_user_mini(user: User, rating_category: str | None = None) -> dict:
     }
 
 
-def _cleanup_open_challenges(db: Session, now: datetime) -> None:
-    db.query(Challenge).filter(
-        Challenge.status == "OPEN",
-        Challenge.expires_at <= now,
-    ).update({Challenge.status: "EXPIRED"}, synchronize_session=False)
-    db.query(Challenge).filter(
-        Challenge.status == "OPEN",
-        Challenge.stake > 0,
-    ).update({Challenge.status: "EXPIRED"}, synchronize_session=False)
-    db.commit()
-
-
 def _challenge_payload(challenge: Challenge) -> dict:
     normalized_time_control = normalize_time_control(challenge.time_control)
     rating_category = determine_rating_category(normalized_time_control)
@@ -49,7 +45,7 @@ def _challenge_payload(challenge: Challenge) -> dict:
     return {
         "id": str(challenge.id),
         "creatorId": str(challenge.creator_id),
-        "stake": 0.0,
+        "stake": money_to_float(challenge.stake),
         "timeControl": normalized_time_control,
         "isRated": bool(getattr(challenge, "is_rated", True)),
         "ratingCategory": rating_category,
@@ -57,6 +53,47 @@ def _challenge_payload(challenge: Challenge) -> dict:
         "createdAt": challenge.created_at,
         "expiresAt": challenge.expires_at,
     }
+
+
+def _refund_expired_challenge(db: Session, challenge: Challenge) -> None:
+    stake = to_money(challenge.stake)
+    if stake > 0:
+        creator = db.query(User).filter(User.id == challenge.creator_id).with_for_update().first()
+        if creator:
+            creator.balance = to_money(creator.balance) + stake
+            create_transaction_record(
+                db,
+                user_id=str(creator.id),
+                amount=stake,
+                type="STAKE_REFUND",
+                reference=f"stake_refund_expired_{challenge.id}",
+                meta={
+                    "reason": "CHALLENGE_EXPIRED",
+                    "challengeId": str(challenge.id),
+                },
+            )
+
+    challenge.status = "EXPIRED"
+
+
+def _cleanup_open_challenges(db: Session, now: datetime) -> None:
+    expired_challenges = (
+        db.query(Challenge)
+        .filter(
+            Challenge.status == "OPEN",
+            Challenge.expires_at <= now,
+        )
+        .with_for_update(skip_locked=True)
+        .all()
+    )
+
+    if not expired_challenges:
+        return
+
+    for challenge in expired_challenges:
+        _refund_expired_challenge(db, challenge)
+
+    db.commit()
 
 
 def _resolve_colors(
@@ -90,6 +127,49 @@ def _resolve_colors(
     return str(acceptor_id), str(creator_id)
 
 
+def _reserve_creator_stake_for_challenge(db: Session, user: User, challenge: Challenge) -> None:
+    stake = to_money(challenge.stake)
+    if stake <= 0:
+        return
+
+    debit_user_balance(user, stake)
+    create_transaction_record(
+        db,
+        user_id=str(user.id),
+        amount=stake,
+        type="STAKE_HOLD",
+        reference=f"stake_hold_challenge_{challenge.id}",
+        meta={
+            "challengeId": str(challenge.id),
+            "role": "creator",
+        },
+    )
+
+
+def _collect_acceptor_stake(db: Session, acceptor: User, challenge: Challenge) -> None:
+    stake = to_money(challenge.stake)
+    if stake <= 0:
+        return
+
+    ensure_sufficient_balance(
+        acceptor,
+        stake,
+        detail="Insufficient wallet balance for this stake table",
+    )
+    debit_user_balance(acceptor, stake)
+    create_transaction_record(
+        db,
+        user_id=str(acceptor.id),
+        amount=stake,
+        type="STAKE_HOLD",
+        reference=f"stake_hold_accept_{challenge.id}_{acceptor.id}",
+        meta={
+            "challengeId": str(challenge.id),
+            "role": "acceptor",
+        },
+    )
+
+
 def _start_game_from_challenge(
     db: Session,
     challenge: Challenge,
@@ -101,15 +181,12 @@ def _start_game_from_challenge(
         raise HTTPException(status_code=400, detail="Challenge not available")
 
     if challenge.expires_at <= now:
+        _refund_expired_challenge(db, challenge)
+        db.commit()
         raise HTTPException(status_code=400, detail="Challenge expired")
 
     if str(challenge.creator_id) == str(acceptor_id):
         raise HTTPException(status_code=400, detail="Cannot accept your own challenge")
-
-    if float(challenge.stake or 0) > 0:
-        challenge.status = "EXPIRED"
-        db.commit()
-        raise HTTPException(status_code=400, detail="Staked challenges are no longer supported")
 
     existing_game = db.query(Game).filter(Game.challenge_id == challenge.id).first()
     if existing_game:
@@ -125,6 +202,8 @@ def _start_game_from_challenge(
 
     if not creator or not acceptor:
         raise HTTPException(status_code=404, detail="User not found")
+
+    _collect_acceptor_stake(db, acceptor, challenge)
 
     white_id, black_id = _resolve_colors(
         creator_id=str(challenge.creator_id),
@@ -142,7 +221,7 @@ def _start_game_from_challenge(
         challenge_id=challenge.id,
         white_id=white_id,
         black_id=black_id,
-        stake=0,
+        stake=to_money(challenge.stake),
         time_control=normalized_time_control,
         rating_category=rating_category,
         is_rated=bool(getattr(challenge, "is_rated", True)),
@@ -164,6 +243,33 @@ def _start_game_from_challenge(
     return new_game, "Challenge accepted. Game started."
 
 
+def _get_existing_open_challenge(
+    db: Session,
+    *,
+    user_id: str,
+    stake: float,
+    normalized_time_control: str,
+    rated: bool,
+    color: str,
+    now: datetime,
+) -> Challenge | None:
+    return (
+        db.query(Challenge)
+        .filter(
+            Challenge.creator_id == user_id,
+            Challenge.status == "OPEN",
+            Challenge.time_control == normalized_time_control,
+            Challenge.is_rated == rated,
+            Challenge.color_preference == color,
+            Challenge.expires_at > now,
+            Challenge.stake == to_money(stake),
+        )
+        .order_by(Challenge.created_at.desc())
+        .with_for_update(skip_locked=True)
+        .first()
+    )
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_challenge(
     req: CreateChallengeSchema,
@@ -174,22 +280,21 @@ async def create_challenge(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    stake = float(req.stake or 0)
-    if stake > 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Staked challenges are no longer supported. Create a free match instead.",
-        )
-
     now = datetime.now(timezone.utc)
     normalized_time_control = normalize_time_control(req.time_control)
-    rating_category = determine_rating_category(normalized_time_control)
-
     expires_at = now + timedelta(hours=1)
+    stake = to_money(req.stake)
+
+    if stake > 0:
+        ensure_sufficient_balance(
+            user,
+            stake,
+            detail="Insufficient wallet balance for this stake table",
+        )
 
     challenge = Challenge(
         creator_id=user_id,
-        stake=0,
+        stake=stake,
         expires_at=expires_at,
         time_control=normalized_time_control,
         status="OPEN",
@@ -198,6 +303,10 @@ async def create_challenge(
     )
 
     db.add(challenge)
+    db.flush()
+
+    _reserve_creator_stake_for_challenge(db, user, challenge)
+
     db.commit()
     db.refresh(challenge)
 
@@ -219,7 +328,6 @@ async def get_available_challenges(
     base_query = db.query(Challenge).filter(
         Challenge.status == "OPEN",
         Challenge.expires_at > now,
-        Challenge.stake <= 0,
     )
 
     total = base_query.count()
@@ -234,7 +342,7 @@ async def get_available_challenges(
         AvailableChallenge(
             id=str(c.id),
             creatorId=str(c.creator_id),
-            stake=0.0,
+            stake=money_to_float(c.stake),
             timeControl=c.time_control,
             isRated=bool(getattr(c, "is_rated", True)),
             ratingCategory=determine_rating_category(c.time_control),
@@ -305,20 +413,49 @@ async def matchmake(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    stake = float(req.stake or 0)
-    if stake > 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Staked challenges are no longer supported. Create a free match instead.",
-        )
-
     now = datetime.now(timezone.utc)
     normalized_time_control = normalize_time_control(req.time_control)
     rating_category = determine_rating_category(normalized_time_control)
+    stake = to_money(req.stake)
 
     _cleanup_open_challenges(db, now)
 
     try:
+        existing_challenge = _get_existing_open_challenge(
+            db,
+            user_id=user_id,
+            stake=money_to_float(stake),
+            normalized_time_control=normalized_time_control,
+            rated=req.rated,
+            color=req.color,
+            now=now,
+        )
+
+        if existing_challenge:
+            return {
+                "success": True,
+                "data": {
+                    "matched": False,
+                    "status": "QUEUED",
+                    "challengeId": str(existing_challenge.id),
+                    "gameId": None,
+                    "message": "Waiting for an opponent.",
+                    "stake": money_to_float(existing_challenge.stake),
+                    "createdAt": existing_challenge.created_at,
+                    "expiresAt": existing_challenge.expires_at,
+                    "timeControl": normalized_time_control,
+                    "isRated": bool(req.rated),
+                    "ratingCategory": rating_category,
+                },
+            }
+
+        if stake > 0:
+            ensure_sufficient_balance(
+                user,
+                stake,
+                detail="Insufficient wallet balance for this stake table",
+            )
+
         candidate_challenges = (
             db.query(Challenge)
             .filter(
@@ -327,7 +464,7 @@ async def matchmake(
                 Challenge.time_control == normalized_time_control,
                 Challenge.is_rated == req.rated,
                 Challenge.expires_at > now,
-                Challenge.stake <= 0,
+                Challenge.stake == stake,
             )
             .order_by(Challenge.created_at.asc())
             .with_for_update(skip_locked=True)
@@ -351,6 +488,7 @@ async def matchmake(
                         "challengeId": str(challenge.id),
                         "gameId": str(game.id),
                         "message": message,
+                        "stake": money_to_float(challenge.stake),
                         "createdAt": challenge.created_at,
                         "expiresAt": challenge.expires_at,
                         "timeControl": normalized_time_control,
@@ -364,47 +502,35 @@ async def matchmake(
                     continue
                 raise
 
-        existing_challenge = (
-            db.query(Challenge)
-            .filter(
-                Challenge.creator_id == user_id,
-                Challenge.status == "OPEN",
-                Challenge.time_control == normalized_time_control,
-                Challenge.is_rated == req.rated,
-                Challenge.color_preference == req.color,
-                Challenge.expires_at > now,
-                Challenge.stake <= 0,
-            )
-            .order_by(Challenge.created_at.desc())
-            .with_for_update(skip_locked=True)
-            .first()
+        expires_at = now + timedelta(hours=1)
+        new_challenge = Challenge(
+            creator_id=user_id,
+            stake=stake,
+            expires_at=expires_at,
+            time_control=normalized_time_control,
+            status="OPEN",
+            color_preference=req.color,
+            is_rated=req.rated,
         )
+        db.add(new_challenge)
+        db.flush()
 
-        if not existing_challenge:
-            expires_at = now + timedelta(hours=1)
-            existing_challenge = Challenge(
-                creator_id=user_id,
-                stake=0,
-                expires_at=expires_at,
-                time_control=normalized_time_control,
-                status="OPEN",
-                color_preference=req.color,
-                is_rated=req.rated,
-            )
-            db.add(existing_challenge)
-            db.commit()
-            db.refresh(existing_challenge)
+        _reserve_creator_stake_for_challenge(db, user, new_challenge)
+
+        db.commit()
+        db.refresh(new_challenge)
 
         return {
             "success": True,
             "data": {
                 "matched": False,
                 "status": "QUEUED",
-                "challengeId": str(existing_challenge.id),
+                "challengeId": str(new_challenge.id),
                 "gameId": None,
                 "message": "Waiting for an opponent.",
-                "createdAt": existing_challenge.created_at,
-                "expiresAt": existing_challenge.expires_at,
+                "stake": money_to_float(new_challenge.stake),
+                "createdAt": new_challenge.created_at,
+                "expiresAt": new_challenge.expires_at,
                 "timeControl": normalized_time_control,
                 "isRated": bool(req.rated),
                 "ratingCategory": rating_category,

@@ -6,9 +6,17 @@ from datetime import datetime, timezone
 import re
 from core.database import get_db
 from core.models import Game, User
+from core.economy import money_to_float
 from core.ratings import determine_rating_category, get_user_rating, normalize_time_control
 from game_management.dependencies import get_current_user_id_dep
-from game_management.logic import abort_game, can_abort_game, maybe_auto_abort_game, process_move, refund_game_stake
+from game_management.logic import (
+    abort_game,
+    award_game_stake,
+    can_abort_game,
+    maybe_auto_abort_game,
+    process_move,
+    refund_game_stake,
+)
 from game_management.ratings import apply_game_result, build_game_rating_payload
 from game_management.game_schema import (
     GameResponse,
@@ -130,7 +138,7 @@ def game_history(
                         displayName=opponent.display_name,
                         rating=int(opponent_rating),
                     ),
-                    stake=0.0,
+                    stake=money_to_float(g.stake),
                     timeControl=_game_time_control(g),
                     isRated=bool(getattr(g, "is_rated", True)),
                     ratingCategory=_game_rating_category(g),
@@ -191,7 +199,7 @@ def active_games(
                         displayName=opponent.display_name,
                         rating=int(opponent_rating),
                     ),
-                    stake=0.0,
+                    stake=money_to_float(g.stake),
                     timeControl=_game_time_control(g),
                     isRated=bool(getattr(g, "is_rated", True)),
                     ratingCategory=_game_rating_category(g),
@@ -248,7 +256,7 @@ def all_games(
             {
                 "id": str(g.id),
                 "opponent": opponent.username,
-                "stake": 0.0,
+                "stake": money_to_float(g.stake),
                 "result": result,
                 "date": date,
                 "moves": len(moves),
@@ -336,7 +344,7 @@ def get_game(game_id: str, db: Session = Depends(get_db)):
         "challengeId": str(game.challenge_id) if game.challenge_id else None,
         "white": _player_details(game.white, game, "white"),
         "black": _player_details(game.black, game, "black"),
-        "stake": 0.0,
+        "stake": money_to_float(game.stake),
         "timeControl": _game_time_control(game),
         "isRated": bool(getattr(game, "is_rated", True)),
         "ratingCategory": _game_rating_category(game),
@@ -420,6 +428,7 @@ def resign_game(
     game.result = result
     game.winner_id = winner_id
     game.completed_at = datetime.now(timezone.utc)
+    award_game_stake(db, game, winner_id, reason="RESIGN")
     rating_payload = apply_game_result(game, white_player, black_player)
 
     db.commit()

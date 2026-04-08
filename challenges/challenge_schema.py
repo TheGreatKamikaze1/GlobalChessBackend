@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Literal
 
 
 class CreateChallengeSchema(BaseModel):
-    stake: float = Field(0, ge=0, description="Legacy field. Staked matches are no longer supported.")
+    stake: float = Field(0, ge=0, description="Per-player stake amount in USD-equivalent piece value.")
     time_control: str = Field(
         "5+0",
         description="Time control format (e.g., '5+0' for a 5 minute game with no increment).",
@@ -22,6 +22,7 @@ class MatchmakeResponseData(BaseModel):
     challengeId: str
     gameId: Optional[str] = None
     message: str
+    stake: float
     createdAt: datetime
     expiresAt: datetime
     timeControl: str

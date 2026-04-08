@@ -1,14 +1,17 @@
-import chess
 import json
-from sqlalchemy.orm import Session
-from core.models import Game, User
-from datetime import datetime, timedelta, timezone
 import re
+from datetime import datetime, timedelta, timezone
+
+import chess
+from sqlalchemy.orm import Session
+
+from core.economy import create_transaction_record, credit_user_balance, to_money
+from core.models import Game, User
 from game_management.ratings import apply_game_result
 
 _UCI_RE = re.compile(r"^[a-h][1-8][a-h][1-8][qrbn]?$", re.IGNORECASE)
 EARLY_ABORT_PLY_LIMIT = 2
-AUTO_ABORT_WINDOW_SECONDS = 20
+AUTO_ABORT_WINDOW_SECONDS = 90
 
 
 def _load_moves(game: Game) -> list[str]:
@@ -81,14 +84,56 @@ def abort_game(game: Game) -> None:
     game.premove_black = None
 
 
-def refund_game_stake(db: Session, game: Game) -> None:
-    stake = float(game.stake or 0)
+def refund_game_stake(db: Session, game: Game, *, reason: str = "ABORT") -> None:
+    stake = to_money(game.stake)
     if stake <= 0:
         return
 
-    db.query(User).filter(User.id.in_([game.white_id, game.black_id])).update(
-        {User.balance: User.balance + game.stake},
-        synchronize_session=False,
+    white_player = db.query(User).filter(User.id == game.white_id).with_for_update().first()
+    black_player = db.query(User).filter(User.id == game.black_id).with_for_update().first()
+
+    for player, role in ((white_player, "white"), (black_player, "black")):
+        if not player:
+            continue
+
+        credit_user_balance(player, stake)
+        create_transaction_record(
+            db,
+            user_id=str(player.id),
+            amount=stake,
+            type="STAKE_REFUND",
+            reference=f"stake_refund_{reason.lower()}_{game.id}_{player.id}",
+            meta={
+                "reason": reason,
+                "gameId": str(game.id),
+                "role": role,
+            },
+        )
+
+
+def award_game_stake(db: Session, game: Game, winner_id: str | None, *, reason: str = "WIN") -> None:
+    stake = to_money(game.stake)
+    if stake <= 0 or not winner_id:
+        return
+
+    winner = db.query(User).filter(User.id == winner_id).with_for_update().first()
+    if not winner:
+        return
+
+    winnings = stake * 2
+    credit_user_balance(winner, winnings)
+    create_transaction_record(
+        db,
+        user_id=str(winner.id),
+        amount=winnings,
+        type="STAKE_WIN",
+        reference=f"stake_win_{reason.lower()}_{game.id}_{winner.id}",
+        meta={
+            "reason": reason,
+            "gameId": str(game.id),
+            "stake": str(stake),
+            "pot": str(winnings),
+        },
     )
 
 
@@ -101,13 +146,12 @@ def maybe_auto_abort_game(db: Session, game: Game) -> bool:
         return False
 
     abort_game(game)
-    refund_game_stake(db, game)
+    refund_game_stake(db, game, reason="AUTO_ABORT")
     return True
 
 
 def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None, str | None]:
-   
-    side_to_move = board.turn 
+    side_to_move = board.turn
 
     premove = game.premove_white if side_to_move == chess.WHITE else game.premove_black
     if not premove:
@@ -119,7 +163,6 @@ def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None
         mv = chess.Move.from_uci(premove)
 
         if mv not in board.legal_moves:
-            
             if side_to_move == chess.WHITE:
                 game.premove_white = None
             else:
@@ -129,7 +172,6 @@ def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None
         san = board.san(mv)
         board.push(mv)
 
-       
         if side_to_move == chess.WHITE:
             game.premove_white = None
         else:
@@ -138,7 +180,6 @@ def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None
         return (True, premove, san)
 
     except Exception:
-        
         if side_to_move == chess.WHITE:
             game.premove_white = None
         else:
@@ -149,7 +190,6 @@ def _try_apply_premove(game: Game, board: chess.Board) -> tuple[bool, str | None
 def _parse_move(board: chess.Board, move_text: str) -> tuple[chess.Move, str, str]:
     s = move_text.strip()
 
-   
     if _UCI_RE.match(s):
         try:
             mv = chess.Move.from_uci(s.lower())
@@ -160,7 +200,6 @@ def _parse_move(board: chess.Board, move_text: str) -> tuple[chess.Move, str, st
         except Exception:
             pass
 
-    
     try:
         mv = board.parse_san(s)
         uci = mv.uci()
@@ -176,14 +215,14 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
     if not game:
         return {"error": "GAME_NOT_FOUND"}
 
-    if maybe_auto_abort_game(db, game):
-        db.commit()
-        return {"error": "GAME_ABORTED"}
-
     if game.status != "ONGOING":
         if getattr(game, "result", None) == "ABORTED":
             return {"error": "GAME_ABORTED"}
         return {"error": "GAME_NOT_ACTIVE"}
+
+    if maybe_auto_abort_game(db, game):
+        db.commit()
+        return {"error": "GAME_ABORTED"}
 
     if not any(_same_user(user_id, participant_id) for participant_id in (game.white_id, game.black_id)):
         return {"error": "NOT_PARTICIPANT"}
@@ -191,11 +230,9 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
     board, moves_list = _build_board(game)
     is_white_player = _same_user(user_id, game.white_id)
 
-    
     if (board.turn == chess.WHITE and not is_white_player) or (board.turn == chess.BLACK and is_white_player):
         return {"error": "NOT_YOUR_TURN"}
 
-  
     try:
         move, uci, san = _parse_move(board, move_text)
     except ValueError:
@@ -208,17 +245,14 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
     premove_uci = None
     premove_san = None
 
-  
     if not board.is_game_over():
         premove_applied, premove_uci, premove_san = _try_apply_premove(game, board)
         if premove_applied and premove_uci:
             moves_list.append(premove_uci)
 
-  
     game.current_fen = board.fen()
     game.moves = json.dumps(moves_list)
 
-    
     is_check = board.is_check()
     is_checkmate = board.is_checkmate()
     game_over = board.is_game_over()
@@ -238,7 +272,6 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
             "premoveSan": premove_san,
         }
 
-   
     game.status = "COMPLETED"
     game.completed_at = datetime.now(timezone.utc)
 
@@ -248,11 +281,9 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
     if not white_player or not black_player:
         return {"error": "PLAYER_NOT_FOUND"}
 
-    stake = float(game.stake or 0)
     winner_id = None
 
     if is_checkmate:
-       
         if board.turn == chess.WHITE:
             winner_id = game.black_id
             game.result = "BLACK_WIN"
@@ -261,19 +292,10 @@ def process_move(db: Session, game_id: str, user_id: str, move_text: str):
             game.result = "WHITE_WIN"
 
         game.winner_id = winner_id
-
-        
-        if stake > 0 and winner_id:
-            winner = white_player if str(white_player.id) == str(winner_id) else black_player
-            if winner:
-                winner.balance += (game.stake * 2)
+        award_game_stake(db, game, winner_id, reason="CHECKMATE")
     else:
         game.result = "DRAW"
-        if stake > 0:
-            db.query(User).filter(User.id.in_([game.white_id, game.black_id])).update(
-                {User.balance: User.balance + game.stake},
-                synchronize_session=False,
-            )
+        refund_game_stake(db, game, reason="DRAW")
 
     rating_payload = apply_game_result(game, white_player, black_player)
     db.commit()
