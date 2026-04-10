@@ -5,6 +5,8 @@ import string
 from dataclasses import dataclass
 from decimal import Decimal
 
+from fastapi import HTTPException
+
 DEFAULT_BASE_RPC_URL = "https://mainnet.base.org"
 DEFAULT_BASE_EXPLORER_URL = "https://basescan.org"
 DEFAULT_BASE_CHAIN_ID = 8453
@@ -80,7 +82,7 @@ def get_supported_networks() -> dict[str, NetworkConfig]:
 def get_network_config(network_key: str) -> NetworkConfig:
     network = get_supported_networks().get((network_key or "").upper())
     if not network:
-        raise ValueError("Unsupported crypto network")
+        raise HTTPException(status_code=400, detail="Unsupported crypto network")
     return network
 
 
@@ -88,5 +90,5 @@ def get_asset_config(network_key: str, asset_symbol: str) -> AssetConfig:
     network = get_network_config(network_key)
     asset = network.assets.get((asset_symbol or "").upper())
     if not asset:
-        raise ValueError("Unsupported crypto asset")
+        raise HTTPException(status_code=400, detail="Unsupported crypto asset")
     return asset

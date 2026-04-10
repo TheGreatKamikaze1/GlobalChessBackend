@@ -19,6 +19,7 @@ from sockets.game_socket import game_socket
 from core.gift_wallet_router import router as gifts_router
 from puzzles.router import router as puzzles_router
 from crypto_payments.router import router as crypto_router
+from transactions.main import router as transactions_router
 
 
 app = FastAPI(
@@ -60,6 +61,7 @@ app.include_router(voice_router)
 app.include_router(gifts_router, prefix="/api/gifts", tags=["Gifts"])
 app.include_router(puzzles_router, prefix="/api/puzzles", tags=["Puzzles"])
 app.include_router(crypto_router, prefix="/api/crypto", tags=["Crypto"])
+app.include_router(transactions_router, prefix="/api/transactions", tags=["Transactions"])
 
 
 @app.websocket("/ws/game")

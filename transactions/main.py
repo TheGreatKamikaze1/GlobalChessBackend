@@ -20,14 +20,6 @@ from transactions.schemas import (
 )
 from core.auth import get_current_user
 
-from payment_service.app.services.paystack_service import (
-    list_banks,
-    resolve_account_number,
-    create_transfer_recipient,
-    initiate_transfer,
-    verify_transfer,
-)
-
 router = APIRouter(tags=["Transactions"])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -49,6 +41,18 @@ def _verify_password_or_401(user: User, password: str):
 def _norm_name(s: str) -> str:
     # Normalize whitespace and case for safe comparisons
     return " ".join((s or "").split()).strip().lower()
+
+
+def _paystack_service():
+    try:
+        from payment_service.app.services import paystack_service
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Paystack service is not configured: {str(exc)[:200]}",
+        ) from exc
+
+    return paystack_service
 
 
 def _require_internal_paystack(
@@ -140,7 +144,7 @@ async def get_all_banks(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        resp = await list_banks(country=country, per_page=per_page)
+        resp = await _paystack_service().list_banks(country=country, per_page=per_page)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Paystack list_banks failed: {str(e)[:300]}")
 
@@ -172,7 +176,10 @@ async def resolve_account(
 ):
   
     try:
-        resp = await resolve_account_number(account_number=account_number, bank_code=bank_code)
+        resp = await _paystack_service().resolve_account_number(
+            account_number=account_number,
+            bank_code=bank_code,
+        )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Paystack resolve_account failed: {str(e)[:300]}")
 
@@ -241,7 +248,10 @@ async def withdraw_funds(
 
    
     try:
-        resolved = await resolve_account_number(payload.account_number, payload.bank_code)
+        resolved = await _paystack_service().resolve_account_number(
+            payload.account_number,
+            payload.bank_code,
+        )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Paystack resolve_account failed: {str(e)[:300]}")
 
@@ -258,7 +268,7 @@ async def withdraw_funds(
 
     # Create transfer recipient
     try:
-        rcp = await create_transfer_recipient(
+        rcp = await _paystack_service().create_transfer_recipient(
             name=resolved_name,
             account_number=payload.account_number,
             bank_code=payload.bank_code,
@@ -310,7 +320,7 @@ async def withdraw_funds(
 
     # Initiate transfer
     try:
-        trf = await initiate_transfer(
+        trf = await _paystack_service().initiate_transfer(
             amount_naira=payload.amount,
             recipient_code=recipient_code,
             reference=reference,
@@ -468,7 +478,7 @@ async def verify_withdrawal_fallback(
         }
 
     try:
-        resp = await verify_transfer(reference)
+        resp = await _paystack_service().verify_transfer(reference)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Paystack verify_transfer failed: {str(e)[:300]}")
 
